@@ -1,0 +1,43 @@
+[package]
+name = "dotcodeschool-cli"
+version = "0.1.0"
+edition = "2021"
+author = "Trantorian"
+description = "A simple test runner for DotCodeShool courses"
+
+[profile.dev]
+incremental = true
+panic = "abort"
+
+[profile.release]
+panic = "unwind"
+
+[profile.production]
+codegen-units = 1    # Setting this to 1 allows for more optimizations at the cost of slower compile time
+inherits = "release"
+lto = "fat"          # Enables Link Time Optimization, enabling more aggressive optimizations across the entire codebase
+opt-level = 3        # Optimize for speed regardless of binary size or compile time
+rpath = false        # Disables adding rpath to the binary
+strip = "symbols"    # Removes debug info and symbold from final binary
+
+[dependencies]
+# utilities
+itertools = "0.13.0"
+lazy_static = "1.5.0"
+derive_more = "0.99.18"
+
+# logging
+log = "0.4.22"
+env_logger = "0.11.5"
+chrono = "0.4.38"
+colored = "2.1.0"
+
+# parsing
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.122"
+clap = { version = "4.5.13", features = ["derive", "cargo"] }
+
+# error handling
+thiserror = "1.0.63"
+indicatif = "0.17.8"
+regex = "1.10.6"
