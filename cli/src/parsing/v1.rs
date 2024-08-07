@@ -35,7 +35,7 @@ impl Test for JsonTestV1 {
         let command: Vec<&str> = self.cmd.split_whitespace().collect();
 
         let output = std::process::Command::new(command[0])
-            .args(command[1..].into_iter())
+            .args(command[1..].iter())
             .output();
         let output = match output {
             Ok(output) => output,

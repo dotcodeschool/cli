@@ -208,10 +208,10 @@ impl Runner for TestRunnerV1 {
                         let _ = std::process::Command::new("git")
                             .arg("commit")
                             .arg("-m")
-                            .arg("🧪 Updated tests")
+                            .arg("🧪 Updated course")
                             .output();
 
-                        progress.println("\n📝 Updated tests");
+                        progress.println("\n📝 Updated course");
                     }
                 } else {
                     progress.println(
