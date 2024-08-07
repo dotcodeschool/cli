@@ -1,0 +1,28 @@
+[package]
+name = "dotcodeschool-cli"
+version = "0.1.0"
+edition = "2021"
+author = "Trantorian"
+description = "A simple test runner for DotCodeShool courses"
+
+[dependencies]
+# utilities
+itertools = { workspace = true }
+lazy_static = { workspace = true }
+derive_more = { workspace = true }
+
+# logging
+log = { workspace = true }
+env_logger = { workspace = true }
+chrono = { workspace = true }
+colored = { workspace = true }
+
+# parsing
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+
+# error handling
+thiserror = { workspace = true }
+indicatif = { workspace = true }
+regex = { workspace = true }

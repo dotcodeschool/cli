@@ -1,4 +1,4 @@
-use std::{ops::Deref, thread, time::Duration};
+use std::ops::Deref;
 
 use indicatif::ProgressBar;
 
@@ -12,7 +12,7 @@ use super::{
 use colored::Colorize;
 use derive_more::Constructor;
 
-pub const TEST_DIR: &str = "./tests";
+pub const TEST_DIR: &str = "./course";
 
 /// Runs all the tests specified in a `tests.json` file.
 ///
@@ -148,7 +148,7 @@ impl Runner for TestRunnerV1 {
 
                         if line.starts_with("-") {
                             progress.set_message(
-                                "Downloading tests"
+                                "Downloading course"
                                     .italic()
                                     .dimmed()
                                     .to_string(),
@@ -163,7 +163,13 @@ impl Runner for TestRunnerV1 {
                         }
                     }
                 } else {
-                    progress.println("⚠ Failed to check for updates");
+                    progress.println(
+                        "\n🔄 Failed to check for updates"
+                            .white()
+                            .dimmed()
+                            .italic()
+                            .to_string(),
+                    );
                 }
 
                 // Checks for updates
@@ -186,7 +192,7 @@ impl Runner for TestRunnerV1 {
 
                     if stdout.contains("Your branch is behind") {
                         progress.set_message(
-                            "Updating tests".italic().dimmed().to_string(),
+                            "Updating course".italic().dimmed().to_string(),
                         );
 
                         let _ = std::process::Command::new("git")
@@ -208,7 +214,13 @@ impl Runner for TestRunnerV1 {
                         progress.println("\n📝 Updated tests");
                     }
                 } else {
-                    progress.println("⚠ Failed to check for updates");
+                    progress.println(
+                        "\n🔄 Failed to check for updates"
+                            .white()
+                            .dimmed()
+                            .italic()
+                            .to_string(),
+                    );
                 }
 
                 format_bar(&progress);
