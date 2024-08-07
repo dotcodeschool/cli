@@ -1,0 +1,3 @@
+[submodule "course"]
+	path = course
+	url = https://git.dotcodeschool.com/dotcodeschool-cli-course
