@@ -10,6 +10,7 @@ use thiserror::Error;
 use self::v1::JsonCourseV1;
 
 pub mod v1;
+pub mod v2;
 
 pub const V_1_0: &str = "1.0";
 
