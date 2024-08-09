@@ -6,16 +6,21 @@ use std::io::Write;
 
 mod parsing;
 mod runner;
+mod validation;
+
+const TEST_DEFAULT: &str = "./tests.json";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
+struct Cli {
     #[arg(short, long)]
     tests: Option<String>,
+    #[arg(long)]
+    check: bool,
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = Cli::parse();
 
     Builder::from_default_env()
         .format(|buf, record| {
@@ -31,11 +36,16 @@ fn main() {
 
     let path = match args.tests {
         Some(path) => path,
-        None => "./tests.json".to_string(),
+        None => TEST_DEFAULT.to_string(),
     };
 
     let mut runner = RunnerVersion::new(&path);
-    while !runner.is_finished() {
-        runner = runner.run();
+
+    if args.check {
+        todo!()
+    } else {
+        while !runner.is_finished() {
+            runner = runner.run();
+        }
     }
 }

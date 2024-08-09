@@ -2,7 +2,7 @@
   "version": "2.0",
   "name": "Course name",
   "title": "Course title",
-  "slug": "🐌",
+  "slug": "0x740d",
   "description": "description.md",
   "tagline": "tagline",
   "author": {
@@ -34,7 +34,7 @@
       "lessons": [
         {
           "name": "Lesson name",
-          "slug": "🐌",
+          "slug": "0x984b",
           "description": "Lesson description",
           "duration": 3600,
           "content": [
@@ -49,13 +49,13 @@
           ],
           "suites": [
             {
-              "name": "Dummy Suite",
-              "slug": "🐌",
+              "name": "Suite 1",
+              "slug": "0xfca3",
               "optional": false,
               "tests": [
                 {
                   "name": "Foo",
-                  "slug": "🐌",
+                  "slug": "0x95a2",
                   "optional": false,
                   "cmd": "cargo test -p course foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
@@ -63,7 +63,7 @@
                 },
                 {
                   "name": "Bazz",
-                  "slug": "🐌",
+                  "slug": "0x1d38",
                   "optional": true,
                   "cmd": "cargo test -p course bazz",
                   "message_on_fail": "This test failed, back to the drawing board.",
@@ -72,13 +72,13 @@
               ]
             },
             {
-              "name": "Dummy Suite",
-              "slug": "🐌",
+              "name": "Suite 2",
+              "slug": "0x1694",
               "optional": true,
               "tests": [
                 {
                   "name": "Foo",
-                  "slug": "🐌",
+                  "slug": "0xf9ab",
                   "optional": false,
                   "cmd": "cargo test -p course foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
@@ -86,7 +86,7 @@
                 },
                 {
                   "name": "Bazz",
-                  "slug": "🐌",
+                  "slug": "0xca84",
                   "optional": false,
                   "cmd": "cargo test -p course bazz",
                   "message_on_fail": "This test failed, back to the drawing board.",
