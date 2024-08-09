@@ -9,8 +9,8 @@ use regex::Regex;
 use crate::parsing::{load_course, JsonCourseVersion, ParsingError};
 
 use self::{
-    v1::{TestRunnerStateV1, TestRunnerV1},
-    v2::{TestRunnerStateV2, TestRunnerV2},
+    v1::{RunnerStateV1, RunnerV1},
+    v2::{RunnerStateV2, RunnerV2},
 };
 
 pub mod v1;
@@ -24,8 +24,8 @@ lazy_static! {
 }
 
 pub enum RunnerVersion {
-    V1(TestRunnerV1),
-    V2(TestRunnerV2),
+    V1(RunnerV1),
+    V2(RunnerV2),
     Undefined,
 }
 
@@ -49,10 +49,10 @@ pub trait Runner {
 
                     let progress = ProgressBar::new(test_count as u64);
 
-                    let runner = TestRunnerV1::new(
+                    let runner = RunnerV1::new(
                         progress,
                         0,
-                        TestRunnerStateV1::Loaded,
+                        RunnerStateV1::Loaded,
                         course,
                     );
 
@@ -75,10 +75,10 @@ pub trait Runner {
 
                     let progress = ProgressBar::new(test_count as u64);
 
-                    let runner = TestRunnerV2::new(
+                    let runner = RunnerV2::new(
                         progress,
                         0,
-                        TestRunnerStateV2::Loaded,
+                        RunnerStateV2::Loaded,
                         course,
                     );
 

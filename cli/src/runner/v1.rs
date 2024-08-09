@@ -88,15 +88,15 @@ pub const TEST_DIR: &str = "./course";
 /// * `progress`: number of tests left to run.
 /// * `course`: deserialized course information.
 #[derive(Constructor)]
-pub struct TestRunnerV1 {
+pub struct RunnerV1 {
     progress: ProgressBar,
     success: u32,
-    pub state: TestRunnerStateV1,
+    pub state: RunnerStateV1,
     course: JsonCourseV1,
 }
 
 #[derive(Eq, PartialEq, Clone)]
-pub enum TestRunnerStateV1 {
+pub enum RunnerStateV1 {
     Loaded,
     Update,
     NewSuite(usize),
@@ -106,14 +106,14 @@ pub enum TestRunnerStateV1 {
     Finish,
 }
 
-impl Runner for TestRunnerV1 {
+impl Runner for RunnerV1 {
     fn run(self) -> Self {
         let Self { progress, mut success, state, course } = self;
 
         match state {
             // Genesis state, displays information about the course and the
             // number of exercises left.
-            TestRunnerStateV1::Loaded => {
+            RunnerStateV1::Loaded => {
                 progress.println(DOTCODESCHOOL.clone());
 
                 progress.println(format!(
@@ -130,18 +130,13 @@ impl Runner for TestRunnerV1 {
                     "\n📒 You have {} exercises left",
                     exercise_count.to_string().bold()
                 ));
-                Self {
-                    progress,
-                    success,
-                    state: TestRunnerStateV1::Update,
-                    course,
-                }
+                Self { progress, success, state: RunnerStateV1::Update, course }
             }
             // Initializes all submodules and checks for tests updates. This
             // happens if the `TEST_DIR` submodule is out of date,
             // in which case it will be pulled. A new commit is then
             // created which contains the submodule update.
-            TestRunnerStateV1::Update => {
+            RunnerStateV1::Update => {
                 format_spinner(&progress);
 
                 let output = std::process::Command::new("git")
@@ -238,12 +233,12 @@ impl Runner for TestRunnerV1 {
                 Self {
                     progress,
                     success,
-                    state: TestRunnerStateV1::NewSuite(0),
+                    state: RunnerStateV1::NewSuite(0),
                     course,
                 }
             }
             // Displays the name of the current suite
-            TestRunnerStateV1::NewSuite(index_suite) => {
+            RunnerStateV1::NewSuite(index_suite) => {
                 let suite = &course.suites[index_suite];
                 let suite_name =
                     suite.name.deref().to_uppercase().bold().green();
@@ -256,14 +251,14 @@ impl Runner for TestRunnerV1 {
                 Self {
                     progress,
                     success,
-                    state: TestRunnerStateV1::NewTest(index_suite, 0),
+                    state: RunnerStateV1::NewTest(index_suite, 0),
                     course,
                 }
             }
             // Runs the current test. This state is responsible for exiting
             // into a Failed state in case a mandatory test
             // does not pass.
-            TestRunnerStateV1::NewTest(index_suite, index_test) => {
+            RunnerStateV1::NewTest(index_suite, index_test) => {
                 let suite = &course.suites[index_suite];
                 let test = &suite.tests[index_test];
                 let test_name = test.name.to_lowercase().bold();
@@ -300,7 +295,7 @@ impl Runner for TestRunnerV1 {
                             return Self {
                                 progress,
                                 success,
-                                state: TestRunnerStateV1::Failed(format!(
+                                state: RunnerStateV1::Failed(format!(
                                     "Failed test {test_name}"
                                 )),
                                 course,
@@ -318,7 +313,7 @@ impl Runner for TestRunnerV1 {
                     (_, true) => Self {
                         progress,
                         success,
-                        state: TestRunnerStateV1::NewTest(
+                        state: RunnerStateV1::NewTest(
                             index_suite,
                             index_test + 1,
                         ),
@@ -327,13 +322,13 @@ impl Runner for TestRunnerV1 {
                     (true, false) => Self {
                         progress,
                         success,
-                        state: TestRunnerStateV1::NewSuite(index_suite + 1),
+                        state: RunnerStateV1::NewSuite(index_suite + 1),
                         course,
                     },
                     (false, false) => Self {
                         progress,
                         success,
-                        state: TestRunnerStateV1::Passed,
+                        state: RunnerStateV1::Passed,
                         course,
                     },
                 }
@@ -342,23 +337,18 @@ impl Runner for TestRunnerV1 {
             // defined in the `message_on_fail` field of a
             // Test JSON object. This state can also be used for general
             // error logging.
-            TestRunnerStateV1::Failed(msg) => {
+            RunnerStateV1::Failed(msg) => {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
-                Self {
-                    progress,
-                    success,
-                    state: TestRunnerStateV1::Finish,
-                    course,
-                }
+                Self { progress, success, state: RunnerStateV1::Finish, course }
             }
             // ALL mandatory tests passed. Displays the success rate across
             // all tests. It is not important how low that
             // rate is, as long as all mandatory tests pass,
             // and simply serves as an indication of progress for the
             // student.
-            TestRunnerStateV1::Passed => {
+            RunnerStateV1::Passed => {
                 progress.finish_and_clear();
                 let exercise_count = course
                     .suites
@@ -374,24 +364,16 @@ impl Runner for TestRunnerV1 {
                     score.green().bold()
                 ));
 
-                Self {
-                    progress,
-                    success,
-                    state: TestRunnerStateV1::Finish,
-                    course,
-                }
+                Self { progress, success, state: RunnerStateV1::Finish, course }
             }
             // Exit state, does nothing when called.
-            TestRunnerStateV1::Finish => Self {
-                progress,
-                success,
-                state: TestRunnerStateV1::Finish,
-                course,
-            },
+            RunnerStateV1::Finish => {
+                Self { progress, success, state: RunnerStateV1::Finish, course }
+            }
         }
     }
 
     fn is_finished(&self) -> bool {
-        self.state == TestRunnerStateV1::Finish
+        self.state == RunnerStateV1::Finish
     }
 }
