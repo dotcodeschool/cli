@@ -26,3 +26,9 @@ clap = { workspace = true }
 thiserror = { workspace = true }
 indicatif = { workspace = true }
 regex = { workspace = true }
+
+# database
+sled = { workspace = true }
+parity-scale-codec = { workspace = true }
+blake2 = { workspace = true }
+hex = { workspace = true }

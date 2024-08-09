@@ -4,6 +4,7 @@ use env_logger::Builder;
 use runner::{Runner, RunnerVersion};
 use std::io::Write;
 
+mod db;
 mod parsing;
 mod runner;
 mod validation;
