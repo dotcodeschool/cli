@@ -57,7 +57,38 @@
                   "name": "Foo",
                   "slug": "🐌",
                   "optional": false,
-                  "cmd": "cargo test foo",
+                  "cmd": "cargo test -p course foo",
+                  "message_on_fail": "This test failed, back to the drawing board.",
+                  "message_on_success": "This test passed, congrats!"
+                },
+                {
+                  "name": "Bazz",
+                  "slug": "🐌",
+                  "optional": true,
+                  "cmd": "cargo test -p course bazz",
+                  "message_on_fail": "This test failed, back to the drawing board.",
+                  "message_on_success": "This test passed, congrats!"
+                }
+              ]
+            },
+            {
+              "name": "Dummy Suite",
+              "slug": "🐌",
+              "optional": true,
+              "tests": [
+                {
+                  "name": "Foo",
+                  "slug": "🐌",
+                  "optional": false,
+                  "cmd": "cargo test -p course foo",
+                  "message_on_fail": "This test failed, back to the drawing board.",
+                  "message_on_success": "This test passed, congrats!"
+                },
+                {
+                  "name": "Bazz",
+                  "slug": "🐌",
+                  "optional": false,
+                  "cmd": "cargo test -p course bazz",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
                 }

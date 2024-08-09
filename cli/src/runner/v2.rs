@@ -290,7 +290,7 @@ impl Runner for TestRunnerV2 {
                 let stage_name =
                     stage.name.deref().to_uppercase().bold().green();
                 let lesson_name =
-                    stage.name.deref().to_uppercase().bold().green();
+                    lesson.name.deref().to_uppercase().bold().green();
                 let suite_name =
                     suite.name.deref().to_uppercase().bold().green();
 
@@ -374,10 +374,11 @@ impl Runner for TestRunnerV2 {
                 // Moves on to the next text, the next suite, or marks the
                 // tests as Passed
                 match (
+                    index_stage + 1 < course.stages.len(),
                     index_suite + 1 < suites.len(),
                     index_test + 1 < suite.tests.len(),
                 ) {
-                    (_, true) => Self {
+                    (_, _, true) => Self {
                         progress,
                         success,
                         state: TestRunnerStateV2::NewTest {
@@ -388,7 +389,7 @@ impl Runner for TestRunnerV2 {
                         },
                         course,
                     },
-                    (true, false) => Self {
+                    (_, true, false) => Self {
                         progress,
                         success,
                         state: TestRunnerStateV2::NewSuite {
@@ -398,7 +399,7 @@ impl Runner for TestRunnerV2 {
                         },
                         course,
                     },
-                    (false, false) => {
+                    (true, false, false) => {
                         match follow_path(
                             &course,
                             [index_stage, index_lesson + 1],
@@ -421,6 +422,12 @@ impl Runner for TestRunnerV2 {
                             },
                         }
                     }
+                    (false, false, false) => Self {
+                        progress,
+                        success,
+                        state: TestRunnerStateV2::Passed,
+                        course,
+                    },
                 }
             }
             // A mandatory test failed. Displays a custom error message as
