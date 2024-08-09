@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "name": "Course name",
   "title": "Course title",
   "slug": "🐌",
@@ -39,7 +39,7 @@
           "duration": 3600,
           "content": [
             {
-              "type": "Mardown",
+              "type": "markdown",
               "file": "./p2p.md",
               "position": {
                 "x": 0,

@@ -1,7 +1,7 @@
 use chrono::Local;
 use clap::Parser;
 use env_logger::Builder;
-use runner::{Runner, RunnerVersion, TestRunnerState};
+use runner::{Runner, RunnerVersion};
 use std::io::Write;
 
 mod parsing;
@@ -35,7 +35,7 @@ fn main() {
     };
 
     let mut runner = RunnerVersion::new(&path);
-    while runner.state() != TestRunnerState::Finish {
+    while !runner.is_finished() {
         runner = runner.run();
     }
 }

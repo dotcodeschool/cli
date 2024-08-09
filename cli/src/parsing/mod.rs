@@ -7,12 +7,15 @@
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::parsing::v2::JsonCourseV2;
+
 use self::v1::JsonCourseV1;
 
 pub mod v1;
 pub mod v2;
 
 pub const V_1_0: &str = "1.0";
+pub const V_2_0: &str = "2.0";
 
 #[derive(Error, Debug)]
 pub enum ParsingError {
@@ -29,6 +32,7 @@ pub enum TestResult {
 
 pub enum JsonCourseVersion {
     V1(JsonCourseV1),
+    V2(JsonCourseV2),
 }
 
 pub trait Test {
@@ -52,7 +56,7 @@ pub fn load_course(path: &str) -> Result<JsonCourseVersion, ParsingError> {
     match version {
         Value::String(version) => match version.as_ref() {
             V_1_0 => {
-                let json_course =
+                let json_course_v1 =
                     serde_json::from_str::<JsonCourseV1>(&file_contents)
                         .map_err(|err| {
                             ParsingError::CourseFmtError(err.to_string())
@@ -60,7 +64,18 @@ pub fn load_course(path: &str) -> Result<JsonCourseVersion, ParsingError> {
 
                 log::debug!("Course loaded successfully!");
 
-                Ok(JsonCourseVersion::V1(json_course))
+                Ok(JsonCourseVersion::V1(json_course_v1))
+            }
+            V_2_0 => {
+                let json_course_v2 =
+                    serde_json::from_str::<JsonCourseV2>(&file_contents)
+                        .map_err(|err| {
+                            ParsingError::CourseFmtError(err.to_string())
+                        })?;
+
+                log::debug!("Course loaded successfully!");
+
+                Ok(JsonCourseVersion::V2(json_course_v2))
             }
             _ => Err(ParsingError::CourseFmtError(format!(
                 "invalid course version '{version}' in {path}"
