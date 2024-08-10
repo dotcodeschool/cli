@@ -3,7 +3,7 @@ use std::ops::Deref;
 use indicatif::ProgressBar;
 
 use crate::{
-    parsing::{v1::JsonCourseV1, Test, TestResult},
+    parsing::{v1::JsonCourseV1, JsonTest, TestResult},
     str_res::{DOTCODESCHOOL, OPTIONAL},
 };
 
@@ -116,21 +116,13 @@ impl Runner for RunnerV1 {
             // Genesis state, displays information about the course and the
             // number of exercises left.
             RunnerStateV1::Loaded => {
-                progress.println(DOTCODESCHOOL.clone());
-
-                progress.println(format!(
-                    "\n🎓 {} by {}",
-                    course.name.to_uppercase().white().bold(),
-                    course.instructor.white().bold()
-                ));
-
-                let exercise_count = course
+                let test_count = course
                     .suites
                     .iter()
                     .fold(0, |acc, suite| acc + suite.tests.len());
                 progress.println(format!(
                     "\n📒 You have {} exercises left",
-                    exercise_count.to_string().bold()
+                    test_count.to_string().bold()
                 ));
                 Self { progress, success, state: RunnerStateV1::Update, course }
             }
@@ -377,9 +369,5 @@ impl Runner for RunnerV1 {
 
     fn is_finished(&self) -> bool {
         self.state == RunnerStateV1::Finish
-    }
-
-    fn list_tests(&self) -> Vec<crate::db::TestState> {
-        todo!()
     }
 }

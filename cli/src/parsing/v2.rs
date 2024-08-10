@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::parsing::TestResult;
+use crate::{db::TestState, parsing::TestResult};
 
-use super::Test;
+use super::{JsonCourse, JsonTest};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonTestV2 {
@@ -126,7 +126,7 @@ where
     }
 }
 
-impl Test for JsonTestV2 {
+impl JsonTest for JsonTestV2 {
     fn run(&self) -> super::TestResult {
         log::debug!("Running test: '{}", self.cmd);
 
@@ -149,5 +149,40 @@ impl Test for JsonTestV2 {
                 TestResult::Fail(String::from_utf8(output.stderr).unwrap())
             }
         }
+    }
+}
+
+impl<'a> JsonCourse<'a> for JsonCourseV2 {
+    fn name(&'a self) -> &'a str {
+        &self.name
+    }
+
+    fn author(&'a self) -> &'a str {
+        &self.author.name
+    }
+
+    fn list_tests(&self) -> Vec<crate::db::TestState> {
+        let Self { stages, name, .. } = self;
+
+        stages.iter().fold(vec![], |acc, stage| {
+            stage.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
+                Some(suites) => suites.iter().fold(acc, |acc, suite| {
+                    suite.tests.iter().fold(acc, |mut acc, test| {
+                        acc.push(TestState {
+                            path: vec![
+                                name.clone(),
+                                stage.name.clone(),
+                                lesson.name.clone(),
+                                suite.name.clone(),
+                                test.name.clone(),
+                            ],
+                            passed: false,
+                        });
+                        acc
+                    })
+                }),
+                None => acc,
+            })
+        })
     }
 }

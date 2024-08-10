@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{Test, TestResult};
+use super::{JsonCourse, JsonTest, TestResult};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonTestV1 {
@@ -28,7 +28,7 @@ pub struct JsonCourseV1 {
     pub suites: Vec<JsonTestSuiteV1>,
 }
 
-impl Test for JsonTestV1 {
+impl JsonTest for JsonTestV1 {
     fn run(&self) -> TestResult {
         log::debug!("Running test: '{}'", self.cmd);
 
@@ -52,5 +52,19 @@ impl Test for JsonTestV1 {
                 TestResult::Fail(String::from_utf8(output.stderr).unwrap())
             }
         }
+    }
+}
+
+impl<'a> JsonCourse<'a> for JsonCourseV1 {
+    fn name(&'a self) -> &'a str {
+        &self.name
+    }
+
+    fn author(&'a self) -> &'a str {
+        &self.instructor
+    }
+
+    fn list_tests(&self) -> Vec<crate::db::TestState> {
+        todo!()
     }
 }

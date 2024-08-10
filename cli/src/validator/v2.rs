@@ -48,14 +48,6 @@ impl Validator for ValidatorV2 {
 
         match state {
             ValidatorStateV2::Loaded => {
-                progress.println(DOTCODESCHOOL.clone());
-
-                progress.println(format!(
-                    "\n🎓 {} by {}",
-                    course.name.to_uppercase().white().bold(),
-                    course.author.name.white().bold()
-                ));
-
                 progress.println("\n🔍 Validating format");
 
                 Self { progress, state: ValidatorStateV2::Course, course }

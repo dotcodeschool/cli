@@ -7,7 +7,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::parsing::v2::JsonCourseV2;
+use crate::{db::TestState, parsing::v2::JsonCourseV2};
 
 use self::v1::JsonCourseV1;
 
@@ -30,13 +30,42 @@ pub enum TestResult {
     Fail(String),
 }
 
+pub trait JsonCourse<'a> {
+    fn name(&'a self) -> &'a str;
+    fn author(&'a self) -> &'a str;
+    fn list_tests(&self) -> Vec<TestState>;
+}
+
+pub trait JsonTest {
+    fn run(&self) -> TestResult;
+}
+
 pub enum JsonCourseVersion {
     V1(JsonCourseV1),
     V2(JsonCourseV2),
 }
 
-pub trait Test {
-    fn run(&self) -> TestResult;
+impl<'a> JsonCourse<'a> for JsonCourseVersion {
+    fn name(&'a self) -> &'a str {
+        match self {
+            JsonCourseVersion::V1(course) => course.name(),
+            JsonCourseVersion::V2(course) => course.name(),
+        }
+    }
+
+    fn author(&'a self) -> &'a str {
+        match self {
+            JsonCourseVersion::V1(course) => course.author(),
+            JsonCourseVersion::V2(course) => course.author(),
+        }
+    }
+
+    fn list_tests(&self) -> Vec<TestState> {
+        match self {
+            JsonCourseVersion::V1(course) => course.list_tests(),
+            JsonCourseVersion::V2(course) => course.list_tests(),
+        }
+    }
 }
 
 pub fn load_course(path: &str) -> Result<JsonCourseVersion, ParsingError> {
