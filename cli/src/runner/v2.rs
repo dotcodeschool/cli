@@ -3,11 +3,13 @@ use std::ops::Deref;
 use indicatif::ProgressBar;
 use itertools::{FoldWhile, Itertools};
 
-use crate::parsing::{v2::JsonCourseV2, Test, TestResult};
+use crate::{
+    parsing::{v2::JsonCourseV2, Test, TestResult},
+    str_res::{DOTCODESCHOOL, OPTIONAL},
+};
 
 use super::{
     format_bar, format_output, format_spinner, submodule_name, Runner,
-    DOTCODESCHOOL, OPTIONAL,
 };
 
 use colored::Colorize;
@@ -49,7 +51,7 @@ pub const TEST_DIR: &str = "./course";
 ///     ]
 /// }
 /// ```
-///
+//
 /// Course Id will be checked against the DotCodeScool servers to make sure that
 /// the tests are being run in the correct git repository.
 ///
@@ -111,8 +113,8 @@ pub enum RunnerStateV2 {
         index_suite: usize,
         index_test: usize,
     },
-    Failed(String),
-    Passed,
+    Fail(String),
+    Pass,
     Finish,
 }
 
@@ -264,7 +266,7 @@ impl Runner for RunnerV2 {
                     None => Self {
                         progress,
                         success,
-                        state: RunnerStateV2::Passed,
+                        state: RunnerStateV2::Pass,
                         course,
                     },
                 }
@@ -357,7 +359,7 @@ impl Runner for RunnerV2 {
                             return Self {
                                 progress,
                                 success,
-                                state: RunnerStateV2::Failed(format!(
+                                state: RunnerStateV2::Fail(format!(
                                     "Failed test {test_name}"
                                 )),
                                 course,
@@ -412,7 +414,7 @@ impl Runner for RunnerV2 {
                             None => Self {
                                 progress,
                                 success,
-                                state: RunnerStateV2::Passed,
+                                state: RunnerStateV2::Pass,
                                 course,
                             },
                         }
@@ -420,7 +422,7 @@ impl Runner for RunnerV2 {
                     (false, false, false) => Self {
                         progress,
                         success,
-                        state: RunnerStateV2::Passed,
+                        state: RunnerStateV2::Pass,
                         course,
                     },
                 }
@@ -429,7 +431,7 @@ impl Runner for RunnerV2 {
             // defined in the `message_on_fail` field of a
             // Test JSON object. This state can also be used for general
             // error logging.
-            RunnerStateV2::Failed(msg) => {
+            RunnerStateV2::Fail(msg) => {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
@@ -440,7 +442,7 @@ impl Runner for RunnerV2 {
             // rate is, as long as all mandatory tests pass,
             // and simply serves as an indication of progress for the
             // student.
-            RunnerStateV2::Passed => {
+            RunnerStateV2::Pass => {
                 progress.finish_and_clear();
                 let exercise_count =
                     course.stages.iter().fold(0, |acc, stage| {

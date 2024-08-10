@@ -53,6 +53,7 @@ pub struct JsonLessonV2 {
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonStageV2 {
     pub name: String,
+    pub slug: String,
     pub description: String,
     #[serde(deserialize_with = "no_empty_vec")]
     pub lessons: Vec<JsonLessonV2>,

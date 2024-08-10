@@ -3,10 +3,12 @@ use clap::Parser;
 use env_logger::Builder;
 use runner::{Runner, RunnerVersion};
 use std::io::Write;
+use validation::{Validator, ValidatorVersion};
 
 mod db;
 mod parsing;
 mod runner;
+mod str_res;
 mod validation;
 
 const TEST_DEFAULT: &str = "./tests.json";
@@ -40,11 +42,15 @@ fn main() {
         None => TEST_DEFAULT.to_string(),
     };
 
-    let mut runner = RunnerVersion::new(&path);
-
     if args.check {
-        todo!()
+        let mut validator = ValidatorVersion::new(&path);
+
+        while !validator.is_finished() {
+            validator = validator.run();
+        }
     } else {
+        let mut runner = RunnerVersion::new(&path);
+
         while !runner.is_finished() {
             runner = runner.run();
         }

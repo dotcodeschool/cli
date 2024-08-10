@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use colored::Colorize;
-use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::parsing::{load_course, JsonCourseVersion, ParsingError};
@@ -15,13 +13,6 @@ use self::{
 
 pub mod v1;
 pub mod v2;
-
-lazy_static! {
-    static ref DOTCODESCHOOL: String =
-        "[ DotCodeSchool CLI ]".bold().truecolor(230, 0, 122).to_string();
-    static ref OPTIONAL: String =
-        "(optional)".white().dimmed().italic().to_string();
-}
 
 pub enum RunnerVersion {
     V1(RunnerV1),

@@ -2,11 +2,13 @@ use std::ops::Deref;
 
 use indicatif::ProgressBar;
 
-use crate::parsing::{v1::JsonCourseV1, Test, TestResult};
+use crate::{
+    parsing::{v1::JsonCourseV1, Test, TestResult},
+    str_res::{DOTCODESCHOOL, OPTIONAL},
+};
 
 use super::{
     format_bar, format_output, format_spinner, submodule_name, Runner,
-    DOTCODESCHOOL, OPTIONAL,
 };
 
 use colored::Colorize;
