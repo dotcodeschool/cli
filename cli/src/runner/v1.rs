@@ -378,4 +378,8 @@ impl Runner for RunnerV1 {
     fn is_finished(&self) -> bool {
         self.state == RunnerStateV1::Finish
     }
+
+    fn list_tests(&self) -> Vec<crate::db::TestState> {
+        todo!()
+    }
 }

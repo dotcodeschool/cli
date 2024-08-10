@@ -25,6 +25,7 @@ strip = "symbols"    # Removes debug info and symbold from final binary
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 derive_more = "0.99.18"
+indexmap = "2.3.0"
 
 # logging
 log = "0.4.22"
@@ -47,4 +48,3 @@ sled = "0.34.7"
 parity-scale-codec = { version = "3.6.12", features = ["derive"] }
 blake2 = "0.10.6"
 hex = "0.4.3"
-

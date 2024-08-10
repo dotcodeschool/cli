@@ -4,7 +4,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use regex::Regex;
 
-use crate::parsing::{load_course, JsonCourseVersion, ParsingError};
+use crate::{
+    db::TestState,
+    parsing::{load_course, JsonCourseVersion, ParsingError},
+};
 
 use self::{
     v1::{RunnerStateV1, RunnerV1},
@@ -88,6 +91,8 @@ pub trait Runner {
         }
     }
 
+    fn list_tests(&self) -> Vec<TestState>;
+
     fn is_finished(&self) -> bool;
 }
 
@@ -105,6 +110,13 @@ impl Runner for RunnerVersion {
             RunnerVersion::V1(runner) => runner.is_finished(),
             RunnerVersion::V2(runner) => runner.is_finished(),
             RunnerVersion::Undefined => true,
+        }
+    }
+
+    fn list_tests(&self) -> Vec<TestState> {
+        match self {
+            RunnerVersion::V2(runner) => runner.list_tests(),
+            _ => vec![],
         }
     }
 }

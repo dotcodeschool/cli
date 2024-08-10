@@ -10,6 +10,7 @@ description = "A simple test runner for DotCodeShool courses"
 itertools = { workspace = true }
 lazy_static = { workspace = true }
 derive_more = { workspace = true }
+indexmap = { workspace = true }
 
 # logging
 log = { workspace = true }

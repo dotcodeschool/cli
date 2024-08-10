@@ -4,6 +4,7 @@ use indicatif::ProgressBar;
 use itertools::{FoldWhile, Itertools};
 
 use crate::{
+    db::TestState,
     parsing::{v2::JsonCourseV2, Test, TestResult},
     str_res::{DOTCODESCHOOL, OPTIONAL},
 };
@@ -474,6 +475,31 @@ impl Runner for RunnerV2 {
                 Self { progress, success, state: RunnerStateV2::Finish, course }
             }
         }
+    }
+
+    fn list_tests(&self) -> Vec<crate::db::TestState> {
+        let Self { course, .. } = self;
+
+        course.stages.iter().fold(vec![], |acc, stage| {
+            stage.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
+                Some(suites) => suites.iter().fold(acc, |acc, suite| {
+                    suite.tests.iter().fold(acc, |mut acc, test| {
+                        acc.push(TestState {
+                            path: vec![
+                                course.name.clone(),
+                                stage.name.clone(),
+                                lesson.name.clone(),
+                                suite.name.clone(),
+                                test.name.clone(),
+                            ],
+                            passed: false,
+                        });
+                        acc
+                    })
+                }),
+                None => acc,
+            })
+        })
     }
 
     fn is_finished(&self) -> bool {
