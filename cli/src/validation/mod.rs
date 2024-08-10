@@ -20,8 +20,24 @@ pub trait Validator {
             Ok(course_version) => match course_version {
                 JsonCourseVersion::V1(_) => ValidatorVersion::Undefined,
                 JsonCourseVersion::V2(course) => {
-                    // TODO!(display number of checks left)
-                    let progress = ProgressBar::new(0);
+                    let slug_count =
+                        1 + course.stages.iter().fold(0, |acc, stage| {
+                            acc + 1
+                                + stage.lessons.iter().fold(0, |acc, lesson| {
+                                    acc + 1
+                                        + match &lesson.suites {
+                                            Some(suites) => suites.iter().fold(
+                                                0,
+                                                |acc, suite| {
+                                                    acc + 1 + suite.tests.len()
+                                                },
+                                            ),
+                                            None => 0,
+                                        }
+                                })
+                        });
+
+                    let progress = ProgressBar::new(slug_count as u64);
 
                     let validator = ValidatorV2::new(
                         progress,

@@ -86,6 +86,8 @@ impl Validator for ValidatorV2 {
                         course.slug.white()
                     ));
 
+                    progress.inc(1);
+
                     Self {
                         progress,
                         state: ValidatorStateV2::Stage { index_stage: 0 },
@@ -121,6 +123,8 @@ impl Validator for ValidatorV2 {
                         stage.name.green().bold(),
                         stage.slug.white()
                     ));
+
+                    progress.inc(1);
 
                     Self {
                         progress,
@@ -163,6 +167,8 @@ impl Validator for ValidatorV2 {
                         lesson.name.green().bold(),
                         lesson.slug.white()
                     ));
+
+                    progress.inc(1);
 
                     if lesson.suites.is_some() {
                         Self {
@@ -247,6 +253,8 @@ impl Validator for ValidatorV2 {
                         suite.slug.white()
                     ));
 
+                    progress.inc(1);
+
                     Self {
                         progress,
                         state: ValidatorStateV2::Test {
@@ -306,6 +314,8 @@ impl Validator for ValidatorV2 {
                         test.name.green().bold(),
                         test.slug.white()
                     ));
+
+                    progress.inc(1);
 
                     match (
                         index_stage + 1 < course.stages.len(),
