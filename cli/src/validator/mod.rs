@@ -1,8 +1,6 @@
-use indicatif::ProgressBar;
+use crate::monitor::StateMachine;
 
-use crate::parsing::{load_course, JsonCourseVersion, ParsingError};
-
-use self::v2::{ValidatorStateV2, ValidatorV2};
+use self::v2::ValidatorV2;
 
 pub mod v2;
 
@@ -11,13 +9,7 @@ pub enum ValidatorVersion {
     Undefined,
 }
 
-pub trait Validator {
-    fn run(self) -> Self;
-
-    fn is_finished(&self) -> bool;
-}
-
-impl Validator for ValidatorVersion {
+impl StateMachine for ValidatorVersion {
     fn run(self) -> Self {
         match self {
             Self::V2(validator) => Self::V2(validator.run()),

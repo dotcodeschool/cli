@@ -1,12 +1,17 @@
 use indicatif::ProgressBar;
 
 use colored::Colorize;
+use parity_scale_codec::Decode;
 
 use crate::{
-    db::TestState,
+    db::{db_open, db_should_update, db_update, DbError, TestState, KEY_TESTS},
+    lister::{
+        v2::{ListerStateV2, ListerV2},
+        ListerVersion,
+    },
     parsing::{
-        load_course, v1::JsonCourseV1, v2::JsonCourseV2, JsonCourse,
-        JsonCourseVersion, ParsingError,
+        load_course, v1::JsonCourseV1, JsonCourse, JsonCourseVersion,
+        ParsingError,
     },
     runner::{
         v1::{RunnerStateV1, RunnerV1},
@@ -20,15 +25,32 @@ use crate::{
     },
 };
 
+pub trait StateMachine {
+    fn run(self) -> Self;
+
+    fn is_finished(&self) -> bool;
+}
+
 pub struct Monitor {
     course: JsonCourseVersion,
     progress: ProgressBar,
+    db: sled::Db,
+    tree: sled::Tree,
 }
 
 impl Monitor {
-    pub fn new(path: &str) -> Self {
-        match load_course(path) {
-            Ok(course) => Self { course, progress: ProgressBar::new(0) },
+    pub fn new(path_db: &str, path_course: &str) -> Result<Self, DbError> {
+        match load_course(path_course) {
+            Ok(course) => {
+                let tests_new = course.list_tests();
+                let (db, tree) = db_open(path_db, path_course)?;
+
+                if db_should_update(&tree, path_course)? {
+                    db_update(&tree, &tests_new)?;
+                }
+
+                Ok(Self { course, progress: ProgressBar::new(0), db, tree })
+            }
             Err(e) => {
                 let msg = match e {
                     ParsingError::CourseFmtError(msg) => msg,
@@ -36,10 +58,10 @@ impl Monitor {
                 };
                 log::error!("{msg}");
 
-                Self {
-                    course: JsonCourseVersion::V1(JsonCourseV1::default()),
-                    progress: ProgressBar::new(0),
-                }
+                Err(DbError::DbOpen(
+                    path_db.to_string(),
+                    "could not deserialize course".to_string(),
+                ))
             }
         }
     }
@@ -49,7 +71,7 @@ impl Monitor {
     pub fn into_runner(self) -> RunnerVersion {
         self.greet();
 
-        let Self { course, progress } = self;
+        let Self { course, progress, .. } = self;
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -90,7 +112,7 @@ impl Monitor {
     pub fn into_validator(self) -> ValidatorVersion {
         self.greet();
 
-        let Self { course, progress } = self;
+        let Self { course, progress, .. } = self;
 
         match course {
             JsonCourseVersion::V1(_) => ValidatorVersion::Undefined,
@@ -125,12 +147,41 @@ impl Monitor {
         }
     }
 
-    pub fn list_tests(&self) -> Vec<TestState> {
-        self.course.list_tests()
+    pub fn into_lister(self) -> Result<ListerVersion, DbError> {
+        self.greet();
+
+        let Self { course, progress, tree, .. } = self;
+
+        match course {
+            JsonCourseVersion::V1(_) => todo!(),
+            JsonCourseVersion::V2(_) => {
+                let bytes = tree
+                    .get(KEY_TESTS)
+                    .map_err(|err| {
+                        DbError::DbGet(hex::encode(KEY_TESTS), err.to_string())
+                    })?
+                    .unwrap();
+
+                let tests =
+                    Vec::<String>::decode(&mut &bytes[..]).map_err(|err| {
+                        DbError::DecodeError(
+                            hex::encode(KEY_TESTS),
+                            err.to_string(),
+                        )
+                    })?;
+
+                Ok(ListerVersion::V2(ListerV2 {
+                    progress,
+                    tests,
+                    tree,
+                    state: ListerStateV2::Loaded,
+                }))
+            }
+        }
     }
 
     fn greet(&self) {
-        let Self { course, progress } = self;
+        let Self { course, progress, .. } = self;
 
         progress.println(DOTCODESCHOOL.clone());
 

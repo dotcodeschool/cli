@@ -3,13 +3,12 @@ use std::ops::Deref;
 use indicatif::ProgressBar;
 
 use crate::{
+    monitor::StateMachine,
     parsing::{v1::JsonCourseV1, JsonTest, TestResult},
-    str_res::{DOTCODESCHOOL, OPTIONAL},
+    str_res::OPTIONAL,
 };
 
-use super::{
-    format_bar, format_output, format_spinner, submodule_name, Runner,
-};
+use super::{format_bar, format_output, format_spinner, submodule_name};
 
 use colored::Colorize;
 use derive_more::Constructor;
@@ -93,7 +92,7 @@ pub const TEST_DIR: &str = "./course";
 pub struct RunnerV1 {
     progress: ProgressBar,
     success: u32,
-    pub state: RunnerStateV1,
+    state: RunnerStateV1,
     course: JsonCourseV1,
 }
 
@@ -108,7 +107,7 @@ pub enum RunnerStateV1 {
     Finish,
 }
 
-impl Runner for RunnerV1 {
+impl StateMachine for RunnerV1 {
     fn run(self) -> Self {
         let Self { progress, mut success, state, course } = self;
 

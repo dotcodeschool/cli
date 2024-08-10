@@ -1,13 +1,12 @@
 use chrono::Local;
 use clap::{Parser, Subcommand};
-use db::{db_open, db_should_update, db_update, DbError, PATH_DB};
+use db::{DbError, PATH_DB};
 use env_logger::Builder;
-use monitor::Monitor;
-use runner::{Runner, RunnerVersion};
+use monitor::{Monitor, StateMachine};
 use std::io::Write;
-use validator::{Validator, ValidatorVersion};
 
 mod db;
+mod lister;
 mod monitor;
 mod parsing;
 mod runner;
@@ -58,13 +57,7 @@ fn main() -> Result<(), DbError> {
     // TODO: add '--db' flag
     let path_db = PATH_DB;
 
-    let monitor = Monitor::new(path_course);
-    let tests_new = monitor.list_tests();
-    let (db, tree) = db_open(path_db, path_course)?;
-
-    if db_should_update(&tree, path_course)? {
-        db_update(&tree, &tests_new)?;
-    }
+    let monitor = Monitor::new(path_db, path_course)?;
 
     match args.command {
         Command::Test => {
@@ -81,9 +74,14 @@ fn main() -> Result<(), DbError> {
                 validator = validator.run();
             }
         }
-        Command::List => todo!(),
+        Command::List => {
+            let mut lister = monitor.into_lister()?;
+
+            while !lister.is_finished() {
+                lister = lister.run();
+            }
+        }
     }
 
-    let _ = db.flush();
     Ok(())
 }

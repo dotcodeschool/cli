@@ -9,9 +9,9 @@ use parity_scale_codec::{Decode, Encode};
 use thiserror::Error;
 
 pub const PATH_DB: &str = "./db";
+pub const KEY_TIME: &[u8] = b"time_last_modified";
+pub const KEY_TESTS: &[u8] = b"tests";
 const HASH_SIZE: usize = 2;
-const KEY_TIME: &[u8] = b"time_last_modified";
-const KEY_TESTS: &[u8] = b"tests";
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -27,16 +27,25 @@ pub enum DbError {
     DbGet(String, String),
     #[error("failed to insert value at key '{0}': {1}")]
     DbInsert(String, String),
-    #[error("failed to remove value at key '{0}':  {1}")]
+    #[error("failed to remove value at key '{0}': {1}")]
     DbRemove(String, String),
+    #[error("failed to flush db: {0}")]
+    DbFlush(String),
     #[error("failed to decode data stored at key '{0}': {1}")]
     DecodeError(String, String),
 }
 
 #[derive(Encode, Decode, Debug)]
+pub enum ValidationState {
+    Unkown,
+    Pass,
+    Fail,
+}
+
+#[derive(Encode, Decode, Debug)]
 pub struct TestState {
     pub path: Vec<String>,
-    pub passed: bool,
+    pub passed: ValidationState,
 }
 
 pub fn hash(words: &[&str]) -> String {

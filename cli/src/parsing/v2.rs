@@ -1,6 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{db::TestState, parsing::TestResult};
+use crate::{
+    db::{TestState, ValidationState},
+    parsing::TestResult,
+};
 
 use super::{JsonCourse, JsonTest};
 
@@ -176,7 +179,7 @@ impl<'a> JsonCourse<'a> for JsonCourseV2 {
                                 suite.name.clone(),
                                 test.name.clone(),
                             ],
-                            passed: false,
+                            passed: ValidationState::Unkown,
                         });
                         acc
                     })

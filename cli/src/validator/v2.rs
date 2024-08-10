@@ -2,9 +2,7 @@ use colored::Colorize;
 use derive_more::Constructor;
 use indicatif::ProgressBar;
 
-use crate::{db::hash, parsing::v2::JsonCourseV2, str_res::DOTCODESCHOOL};
-
-use super::Validator;
+use crate::{db::hash, monitor::StateMachine, parsing::v2::JsonCourseV2};
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum ValidatorStateV2 {
@@ -42,7 +40,7 @@ pub struct ValidatorV2 {
     course: JsonCourseV2,
 }
 
-impl Validator for ValidatorV2 {
+impl StateMachine for ValidatorV2 {
     fn run(self) -> Self {
         let Self { progress, state, course } = self;
 

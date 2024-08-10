@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use regex::Regex;
 
-use crate::db::TestState;
+use crate::monitor::StateMachine;
 
 use self::{v1::RunnerV1, v2::RunnerV2};
 
@@ -17,14 +17,7 @@ pub enum RunnerVersion {
     Undefined,
 }
 
-pub trait Runner {
-    /// Advances the [Runner]'s state machine.
-    fn run(self) -> Self;
-
-    fn is_finished(&self) -> bool;
-}
-
-impl Runner for RunnerVersion {
+impl StateMachine for RunnerVersion {
     fn run(self) -> Self {
         match self {
             RunnerVersion::V1(runner) => Self::V1(runner.run()),

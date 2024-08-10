@@ -4,14 +4,12 @@ use indicatif::ProgressBar;
 use itertools::{FoldWhile, Itertools};
 
 use crate::{
-    db::TestState,
+    monitor::StateMachine,
     parsing::{v2::JsonCourseV2, JsonTest, TestResult},
-    str_res::{DOTCODESCHOOL, OPTIONAL},
+    str_res::OPTIONAL,
 };
 
-use super::{
-    format_bar, format_output, format_spinner, submodule_name, Runner,
-};
+use super::{format_bar, format_output, format_spinner, submodule_name};
 
 use colored::Colorize;
 use derive_more::Constructor;
@@ -119,7 +117,7 @@ pub enum RunnerStateV2 {
     Finish,
 }
 
-impl Runner for RunnerV2 {
+impl StateMachine for RunnerV2 {
     fn run(self) -> Self {
         let Self { progress, mut success, state, course } = self;
 
