@@ -14,7 +14,6 @@ pub mod v2;
 pub enum RunnerVersion {
     V1(RunnerV1),
     V2(RunnerV2),
-    Undefined,
 }
 
 impl StateMachine for RunnerVersion {
@@ -22,7 +21,6 @@ impl StateMachine for RunnerVersion {
         match self {
             RunnerVersion::V1(runner) => Self::V1(runner.run()),
             RunnerVersion::V2(runner) => Self::V2(runner.run()),
-            RunnerVersion::Undefined => Self::Undefined,
         }
     }
 
@@ -30,7 +28,6 @@ impl StateMachine for RunnerVersion {
         match self {
             RunnerVersion::V1(runner) => runner.is_finished(),
             RunnerVersion::V2(runner) => runner.is_finished(),
-            RunnerVersion::Undefined => true,
         }
     }
 }

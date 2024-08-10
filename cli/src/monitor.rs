@@ -4,15 +4,12 @@ use colored::Colorize;
 use parity_scale_codec::Decode;
 
 use crate::{
-    db::{db_open, db_should_update, db_update, DbError, TestState, KEY_TESTS},
+    db::{db_open, db_should_update, db_update, DbError, KEY_TESTS},
     lister::{
         v2::{ListerStateV2, ListerV2},
         ListerVersion,
     },
-    parsing::{
-        load_course, v1::JsonCourseV1, JsonCourse, JsonCourseVersion,
-        ParsingError,
-    },
+    parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
     runner::{
         v1::{RunnerStateV1, RunnerV1},
         v2::{RunnerStateV2, RunnerV2},
@@ -34,6 +31,7 @@ pub trait StateMachine {
 pub struct Monitor {
     course: JsonCourseVersion,
     progress: ProgressBar,
+    #[allow(dead_code)]
     db: sled::Db,
     tree: sled::Tree,
 }
@@ -71,7 +69,7 @@ impl Monitor {
     pub fn into_runner(self) -> RunnerVersion {
         self.greet();
 
-        let Self { course, progress, .. } = self;
+        let Self { course, progress, tree, .. } = self;
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -101,8 +99,13 @@ impl Monitor {
 
                 progress.set_length(test_count as u64);
 
-                let runner =
-                    RunnerV2::new(progress, 0, RunnerStateV2::Loaded, course);
+                let runner = RunnerV2::new(
+                    progress,
+                    0,
+                    RunnerStateV2::Loaded,
+                    tree,
+                    course,
+                );
 
                 RunnerVersion::V2(runner)
             }
@@ -148,8 +151,6 @@ impl Monitor {
     }
 
     pub fn into_lister(self) -> Result<ListerVersion, DbError> {
-        self.greet();
-
         let Self { course, progress, tree, .. } = self;
 
         match course {

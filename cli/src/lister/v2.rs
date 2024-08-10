@@ -31,7 +31,7 @@ impl StateMachine for ListerV2 {
             ListerStateV2::Loaded => {
                 let test_count = tests.len();
                 progress.println(format!(
-                    "\nℹ️  You have {} tests available\n ",
+                    "{} tests available\n ",
                     test_count.to_string().bold()
                 ));
 
@@ -41,7 +41,7 @@ impl StateMachine for ListerV2 {
                         tests,
                         tree: db,
                         state: ListerStateV2::Error {
-                            reason: "\n🚫 no tests found".to_string(),
+                            reason: "🚫 no tests found".to_string(),
                         },
                     }
                 } else {
@@ -68,20 +68,23 @@ impl StateMachine for ListerV2 {
                         match passed {
                             ValidationState::Unkown => {
                                 progress.println(format!(
-                                    " • {}/{}",
+                                    "• {} {}/{}",
+                                    "[   ..   ]".white().dimmed(),
                                     path_to.white().dimmed().italic(),
                                     test_name.white().bold()
                                 ))
                             }
                             ValidationState::Pass => progress.println(format!(
-                                " • {}/{}",
-                                path_to.green().dimmed().italic(),
-                                test_name.white().bold()
+                                "• {} {}/{}",
+                                "[ Passed ]".green().bold(),
+                                path_to.white().dimmed().italic(),
+                                test_name.white().bold(),
                             )),
                             ValidationState::Fail => progress.println(format!(
-                                " • {}/{}",
-                                path_to.red().dimmed().italic(),
-                                test_name.white().bold()
+                                "• {} {}/{}",
+                                "[ Failed ]".red().bold(),
+                                path_to.white().dimmed().italic(),
+                                test_name.white().bold(),
                             )),
                         }
 

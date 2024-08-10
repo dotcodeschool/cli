@@ -29,8 +29,6 @@ pub enum DbError {
     DbInsert(String, String),
     #[error("failed to remove value at key '{0}': {1}")]
     DbRemove(String, String),
-    #[error("failed to flush db: {0}")]
-    DbFlush(String),
     #[error("failed to decode data stored at key '{0}': {1}")]
     DecodeError(String, String),
 }
@@ -88,22 +86,13 @@ pub fn db_should_update(
         .map_err(|err| DbError::DbGet(hex::encode(KEY_TIME), err.to_string()))?
         .map(|bytes| i64::decode(&mut &bytes[..]).unwrap());
 
+    // TODO: replace this with `fetch_and_update`
+    tree.insert(KEY_TIME, time_last_modified.encode()).map_err(|err| {
+        DbError::DbInsert(hex::encode(KEY_TIME), err.to_string())
+    })?;
+
     let should_update = match time_store {
-        Some(time_store) => {
-            if time_last_modified > time_store {
-                tree.insert(&KEY_TIME, time_last_modified.encode()).map_err(
-                    |err| {
-                        DbError::DbInsert(
-                            hex::encode(&KEY_TIME),
-                            err.to_string(),
-                        )
-                    },
-                )?;
-                true
-            } else {
-                false
-            }
-        }
+        Some(time_store) => time_last_modified > time_store,
         None => true,
     };
 

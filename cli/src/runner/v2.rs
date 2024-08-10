@@ -2,8 +2,10 @@ use std::ops::Deref;
 
 use indicatif::ProgressBar;
 use itertools::{FoldWhile, Itertools};
+use parity_scale_codec::{Decode, Encode};
 
 use crate::{
+    db::{TestState, ValidationState},
     monitor::StateMachine,
     parsing::{v2::JsonCourseV2, JsonTest, TestResult},
     str_res::OPTIONAL,
@@ -93,7 +95,8 @@ pub const TEST_DIR: &str = "./course";
 pub struct RunnerV2 {
     progress: ProgressBar,
     success: u32,
-    pub state: RunnerStateV2,
+    state: RunnerStateV2,
+    tree: sled::Tree,
     course: JsonCourseV2,
 }
 
@@ -119,7 +122,7 @@ pub enum RunnerStateV2 {
 
 impl StateMachine for RunnerV2 {
     fn run(self) -> Self {
-        let Self { progress, mut success, state, course } = self;
+        let Self { progress, mut success, state, tree, course } = self;
 
         match state {
             // Genesis state, displays information about the course and the
@@ -142,7 +145,13 @@ impl StateMachine for RunnerV2 {
                     "\n📒 You have {} exercises left",
                     exercise_count.to_string().bold()
                 ));
-                Self { progress, success, state: RunnerStateV2::Update, course }
+                Self {
+                    progress,
+                    success,
+                    tree,
+                    state: RunnerStateV2::Update,
+                    course,
+                }
             }
             // Initializes all submodules and checks for tests updates. This
             // happens if the `TEST_DIR` submodule is out of date,
@@ -252,12 +261,14 @@ impl StateMachine for RunnerV2 {
                             index_lesson,
                             index_suite: 0,
                         },
+                        tree,
                         course,
                     },
                     None => Self {
                         progress,
                         success,
                         state: RunnerStateV2::Pass,
+                        tree,
                         course,
                     },
                 }
@@ -296,6 +307,7 @@ impl StateMachine for RunnerV2 {
                         index_suite,
                         index_test: 0,
                     },
+                    tree,
                     course,
                 }
             }
@@ -328,6 +340,22 @@ impl StateMachine for RunnerV2 {
                 // Testing happens HERE
                 match test.run() {
                     TestResult::Pass(stdout) => {
+                        let key = test.name.encode();
+                        let query = tree.update_and_fetch(key, test_pass);
+
+                        if query.is_err() || matches!(query, Ok(None)) {
+                            return Self {
+                                progress,
+                                success,
+                                state: RunnerStateV2::Fail(format!(
+                                    "failed to update test {}",
+                                    test_name
+                                )),
+                                tree,
+                                course,
+                            };
+                        }
+
                         progress.println(format_output(
                             &stdout,
                             &format!("✅ {}", &test.message_on_success),
@@ -336,6 +364,22 @@ impl StateMachine for RunnerV2 {
                         success += 1;
                     }
                     TestResult::Fail(stderr) => {
+                        let key = test.name.encode();
+                        let query = tree.update_and_fetch(key, test_fail);
+
+                        if query.is_err() || matches!(query, Ok(None)) {
+                            return Self {
+                                progress,
+                                success,
+                                state: RunnerStateV2::Fail(format!(
+                                    "failed to update test {}",
+                                    test_name
+                                )),
+                                tree,
+                                course,
+                            };
+                        }
+
                         progress.println(
                             format_output(
                                 &stderr,
@@ -353,6 +397,7 @@ impl StateMachine for RunnerV2 {
                                 state: RunnerStateV2::Fail(format!(
                                     "Failed test {test_name}"
                                 )),
+                                tree,
                                 course,
                             };
                         }
@@ -375,6 +420,7 @@ impl StateMachine for RunnerV2 {
                             index_suite,
                             index_test: index_test + 1,
                         },
+                        tree,
                         course,
                     },
                     (_, true, false) => Self {
@@ -385,6 +431,7 @@ impl StateMachine for RunnerV2 {
                             index_lesson,
                             index_suite: index_suite + 1,
                         },
+                        tree,
                         course,
                     },
                     (true, false, false) => {
@@ -400,12 +447,14 @@ impl StateMachine for RunnerV2 {
                                     index_lesson,
                                     index_suite: 0,
                                 },
+                                tree,
                                 course,
                             },
                             None => Self {
                                 progress,
                                 success,
                                 state: RunnerStateV2::Pass,
+                                tree,
                                 course,
                             },
                         }
@@ -414,6 +463,7 @@ impl StateMachine for RunnerV2 {
                         progress,
                         success,
                         state: RunnerStateV2::Pass,
+                        tree,
                         course,
                     },
                 }
@@ -426,7 +476,13 @@ impl StateMachine for RunnerV2 {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
-                Self { progress, success, state: RunnerStateV2::Finish, course }
+                Self {
+                    progress,
+                    success,
+                    state: RunnerStateV2::Finish,
+                    tree,
+                    course,
+                }
             }
             // ALL mandatory tests passed. Displays the success rate across
             // all tests. It is not important how low that
@@ -458,12 +514,22 @@ impl StateMachine for RunnerV2 {
                     score.green().bold()
                 ));
 
-                Self { progress, success, state: RunnerStateV2::Finish, course }
+                Self {
+                    progress,
+                    success,
+                    state: RunnerStateV2::Finish,
+                    tree,
+                    course,
+                }
             }
             // Exit state, does nothing when called.
-            RunnerStateV2::Finish => {
-                Self { progress, success, state: RunnerStateV2::Finish, course }
-            }
+            RunnerStateV2::Finish => Self {
+                progress,
+                success,
+                state: RunnerStateV2::Finish,
+                tree,
+                course,
+            },
         }
     }
 
@@ -497,4 +563,22 @@ fn follow_path(course: &JsonCourseV2, path: [usize; 2]) -> Option<[usize; 2]> {
     let lesson = &stage.lessons[index_lesson];
 
     lesson.suites.as_ref().map(|_| [index_stage, index_lesson])
+}
+
+fn test_pass(old: Option<&[u8]>) -> Option<Vec<u8>> {
+    let bytes = old?;
+    let mut test = TestState::decode(&mut &bytes[..]).ok()?;
+
+    test.passed = ValidationState::Pass;
+
+    Some(test.encode())
+}
+
+fn test_fail(old: Option<&[u8]>) -> Option<Vec<u8>> {
+    let bytes = old?;
+    let mut test = TestState::decode(&mut &bytes[..]).ok()?;
+
+    test.passed = ValidationState::Fail;
+
+    Some(test.encode())
 }
