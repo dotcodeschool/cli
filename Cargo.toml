@@ -40,8 +40,10 @@ clap = { version = "4.5.13", features = ["derive", "cargo"] }
 
 # error handling
 thiserror = "1.0.63"
-indicatif = "0.17.8"
 regex = "1.10.6"
+
+# CLI
+indicatif = "0.17.8"
 
 # database
 sled = "0.34.7"

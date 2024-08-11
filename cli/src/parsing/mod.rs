@@ -8,15 +8,11 @@ use indexmap::IndexMap;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::{db::TestState, parsing::v2::JsonCourseV2};
-
-use self::v1::JsonCourseV1;
+use crate::{db::TestState, parsing::v1::JsonCourseV1};
 
 pub mod v1;
-pub mod v2;
 
 pub const V_1_0: &str = "1.0";
-pub const V_2_0: &str = "2.0";
 
 #[derive(Error, Debug)]
 pub enum ParsingError {
@@ -43,28 +39,24 @@ pub trait JsonTest {
 
 pub enum JsonCourseVersion {
     V1(JsonCourseV1),
-    V2(JsonCourseV2),
 }
 
 impl<'a> JsonCourse<'a> for JsonCourseVersion {
     fn name(&'a self) -> &'a str {
         match self {
             JsonCourseVersion::V1(course) => course.name(),
-            JsonCourseVersion::V2(course) => course.name(),
         }
     }
 
     fn author(&'a self) -> &'a str {
         match self {
             JsonCourseVersion::V1(course) => course.author(),
-            JsonCourseVersion::V2(course) => course.author(),
         }
     }
 
     fn list_tests(&self) -> IndexMap<String, TestState> {
         match self {
             JsonCourseVersion::V1(course) => course.list_tests(),
-            JsonCourseVersion::V2(course) => course.list_tests(),
         }
     }
 }
@@ -95,17 +87,6 @@ pub fn load_course(path: &str) -> Result<JsonCourseVersion, ParsingError> {
                 log::debug!("Course loaded successfully!");
 
                 Ok(JsonCourseVersion::V1(json_course_v1))
-            }
-            V_2_0 => {
-                let json_course_v2 =
-                    serde_json::from_str::<JsonCourseV2>(&file_contents)
-                        .map_err(|err| {
-                            ParsingError::CourseFmtError(err.to_string())
-                        })?;
-
-                log::debug!("Course loaded successfully!");
-
-                Ok(JsonCourseVersion::V2(json_course_v2))
             }
             _ => Err(ParsingError::CourseFmtError(format!(
                 "invalid course version '{version}' in {path}"

@@ -25,8 +25,10 @@ clap = { workspace = true }
 
 # error handling
 thiserror = { workspace = true }
-indicatif = { workspace = true }
 regex = { workspace = true }
+
+# CLI
+indicatif = { workspace = true }
 
 # database
 sled = { workspace = true }

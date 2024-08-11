@@ -13,7 +13,7 @@ mod runner;
 mod str_res;
 mod validator;
 
-const PATH_COURSE: &str = "./tests.json";
+const PATH_COURSE: &str = "./course.json";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -21,13 +21,13 @@ struct Cli {
     #[command(subcommand)]
     command: Command,
     #[arg(short, long)]
-    tests: Option<String>,
+    course: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
     #[command(name = "test")]
-    Test,
+    Test { name: Option<String> },
     #[command(name = "check")]
     Check,
     #[command(name = "list")]
@@ -49,7 +49,7 @@ fn main() -> Result<(), DbError> {
         })
         .init();
 
-    let path_course = match args.tests {
+    let path_course = match args.course {
         Some(path) => &path.clone(),
         None => PATH_COURSE,
     };
@@ -60,7 +60,7 @@ fn main() -> Result<(), DbError> {
     let monitor = Monitor::new(path_db, path_course)?;
 
     match args.command {
-        Command::Test => {
+        Command::Test { name } => {
             let mut runner = monitor.into_runner();
 
             while !runner.is_finished() {

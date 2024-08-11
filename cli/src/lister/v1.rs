@@ -9,26 +9,26 @@ use crate::{
 };
 
 #[derive(PartialEq, Eq)]
-pub enum ListerStateV2 {
+pub enum ListerStateV1 {
     Loaded,
     List { index_test: usize },
     Error { reason: String },
     Finished,
 }
 
-pub struct ListerV2 {
+pub struct ListerV1 {
     pub progress: ProgressBar,
     pub tests: Vec<String>,
     pub tree: sled::Tree,
-    pub state: ListerStateV2,
+    pub state: ListerStateV1,
 }
 
-impl StateMachine for ListerV2 {
+impl StateMachine for ListerV1 {
     fn run(self) -> Self {
         let Self { progress, tests, tree: db, state } = self;
 
         match state {
-            ListerStateV2::Loaded => {
+            ListerStateV1::Loaded => {
                 let test_count = tests.len();
                 progress.println(format!(
                     "{} tests available\n ",
@@ -40,7 +40,7 @@ impl StateMachine for ListerV2 {
                         progress,
                         tests,
                         tree: db,
-                        state: ListerStateV2::Error {
+                        state: ListerStateV1::Error {
                             reason: "🚫 no tests found".to_string(),
                         },
                     }
@@ -49,11 +49,11 @@ impl StateMachine for ListerV2 {
                         progress,
                         tests,
                         tree: db,
-                        state: ListerStateV2::List { index_test: 0 },
+                        state: ListerStateV1::List { index_test: 0 },
                     }
                 }
             }
-            ListerStateV2::List { index_test } => {
+            ListerStateV1::List { index_test } => {
                 let key_str = &tests[index_test];
                 let key = key_str.encode();
                 let query = db.get(&key);
@@ -94,7 +94,7 @@ impl StateMachine for ListerV2 {
                                 progress,
                                 tests,
                                 tree: db,
-                                state: ListerStateV2::List {
+                                state: ListerStateV1::List {
                                     index_test: index_test + 1,
                                 },
                             }
@@ -103,7 +103,7 @@ impl StateMachine for ListerV2 {
                                 progress,
                                 tests,
                                 tree: db,
-                                state: ListerStateV2::Finished,
+                                state: ListerStateV1::Finished,
                             }
                         }
                     }
@@ -111,7 +111,7 @@ impl StateMachine for ListerV2 {
                         progress,
                         tests,
                         tree: db,
-                        state: ListerStateV2::Error {
+                        state: ListerStateV1::Error {
                             reason: format!(
                                 "failed to read test, no data at key 0x{}",
                                 hex::encode(key)
@@ -123,7 +123,7 @@ impl StateMachine for ListerV2 {
                         progress,
                         tests,
                         tree: db,
-                        state: ListerStateV2::Error {
+                        state: ListerStateV1::Error {
                             reason: format!(
                                 "failed to read test at key 0x{}, {}",
                                 hex::encode(key),
@@ -133,7 +133,7 @@ impl StateMachine for ListerV2 {
                     },
                 }
             }
-            ListerStateV2::Error { reason } => {
+            ListerStateV1::Error { reason } => {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", reason.red().bold()));
 
@@ -141,19 +141,19 @@ impl StateMachine for ListerV2 {
                     progress,
                     tests,
                     tree: db,
-                    state: ListerStateV2::Finished,
+                    state: ListerStateV1::Finished,
                 }
             }
-            ListerStateV2::Finished => Self {
+            ListerStateV1::Finished => Self {
                 progress,
                 tests,
                 tree: db,
-                state: ListerStateV2::Finished,
+                state: ListerStateV1::Finished,
             },
         }
     }
 
     fn is_finished(&self) -> bool {
-        self.state == ListerStateV2::Finished
+        self.state == ListerStateV1::Finished
     }
 }

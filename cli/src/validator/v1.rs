@@ -2,10 +2,10 @@ use colored::Colorize;
 use derive_more::Constructor;
 use indicatif::ProgressBar;
 
-use crate::{db::hash, monitor::StateMachine, parsing::v2::JsonCourseV2};
+use crate::{db::hash, monitor::StateMachine, parsing::v1::JsonCourseV1};
 
 #[derive(PartialEq, Eq, Debug)]
-pub enum ValidatorStateV2 {
+pub enum ValidatorStateV1 {
     Loaded,
     Course,
     Stage {
@@ -34,23 +34,23 @@ pub enum ValidatorStateV2 {
 }
 
 #[derive(Constructor, Debug)]
-pub struct ValidatorV2 {
+pub struct ValidatorV1 {
     progress: ProgressBar,
-    state: ValidatorStateV2,
-    course: JsonCourseV2,
+    state: ValidatorStateV1,
+    course: JsonCourseV1,
 }
 
-impl StateMachine for ValidatorV2 {
+impl StateMachine for ValidatorV1 {
     fn run(self) -> Self {
         let Self { progress, state, course } = self;
 
         match state {
-            ValidatorStateV2::Loaded => {
+            ValidatorStateV1::Loaded => {
                 progress.println("\n🔍 Validating format");
 
-                Self { progress, state: ValidatorStateV2::Course, course }
+                Self { progress, state: ValidatorStateV1::Course, course }
             }
-            ValidatorStateV2::Course => {
+            ValidatorStateV1::Course => {
                 let slug_expected = format!("0x{}", hash(&[&course.name]));
                 if slug_expected != course.slug {
                     progress.println(format!(
@@ -61,7 +61,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Fail {
+                        state: ValidatorStateV1::Fail {
                             reason: format!(
                                 "Invalid slug: '{}', expected '{}'",
                                 course.slug, slug_expected
@@ -80,12 +80,12 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Stage { index_stage: 0 },
+                        state: ValidatorStateV1::Stage { index_stage: 0 },
                         course,
                     }
                 }
             }
-            ValidatorStateV2::Stage { index_stage } => {
+            ValidatorStateV1::Stage { index_stage } => {
                 let stage = &course.stages[index_stage];
 
                 let slug_expected =
@@ -99,7 +99,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Fail {
+                        state: ValidatorStateV1::Fail {
                             reason: format!(
                                 "Invalid slug: '{}', expected '{}'",
                                 stage.slug, slug_expected
@@ -118,7 +118,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Lesson {
+                        state: ValidatorStateV1::Lesson {
                             index_stage,
                             index_lesson: 0,
                         },
@@ -126,7 +126,7 @@ impl StateMachine for ValidatorV2 {
                     }
                 }
             }
-            ValidatorStateV2::Lesson { index_stage, index_lesson } => {
+            ValidatorStateV1::Lesson { index_stage, index_lesson } => {
                 let stage = &course.stages[index_stage];
                 let lesson = &stage.lessons[index_lesson];
 
@@ -143,7 +143,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Fail {
+                        state: ValidatorStateV1::Fail {
                             reason: format!(
                                 "Invalid slug: '{}', expected '{}'",
                                 lesson.slug, slug_expected
@@ -163,7 +163,7 @@ impl StateMachine for ValidatorV2 {
                     if lesson.suites.is_some() {
                         Self {
                             progress,
-                            state: ValidatorStateV2::Suite {
+                            state: ValidatorStateV1::Suite {
                                 index_stage,
                                 index_lesson,
                                 index_suite: 0,
@@ -177,7 +177,7 @@ impl StateMachine for ValidatorV2 {
                         ) {
                             (_, true) => Self {
                                 progress,
-                                state: ValidatorStateV2::Lesson {
+                                state: ValidatorStateV1::Lesson {
                                     index_stage,
                                     index_lesson: index_lesson + 1,
                                 },
@@ -185,21 +185,21 @@ impl StateMachine for ValidatorV2 {
                             },
                             (true, false) => Self {
                                 progress,
-                                state: ValidatorStateV2::Stage {
+                                state: ValidatorStateV1::Stage {
                                     index_stage: index_stage + 1,
                                 },
                                 course,
                             },
                             (false, false) => Self {
                                 progress,
-                                state: ValidatorStateV2::Pass,
+                                state: ValidatorStateV1::Pass,
                                 course,
                             },
                         }
                     }
                 }
             }
-            ValidatorStateV2::Suite {
+            ValidatorStateV1::Suite {
                 index_stage,
                 index_lesson,
                 index_suite,
@@ -228,7 +228,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Fail {
+                        state: ValidatorStateV1::Fail {
                             reason: format!(
                                 "Invalid slug: '{}', expected '{}'",
                                 suite.slug, slug_expected
@@ -247,7 +247,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Test {
+                        state: ValidatorStateV1::Test {
                             index_stage,
                             index_lesson,
                             index_suite,
@@ -257,7 +257,7 @@ impl StateMachine for ValidatorV2 {
                     }
                 }
             }
-            ValidatorStateV2::Test {
+            ValidatorStateV1::Test {
                 index_stage,
                 index_lesson,
                 index_suite,
@@ -290,7 +290,7 @@ impl StateMachine for ValidatorV2 {
 
                     Self {
                         progress,
-                        state: ValidatorStateV2::Fail {
+                        state: ValidatorStateV1::Fail {
                             reason: format!(
                                 "Invalid slug: '{}', expected '{}'",
                                 test.slug, slug_expected
@@ -315,7 +315,7 @@ impl StateMachine for ValidatorV2 {
                     ) {
                         (_, _, _, true) => Self {
                             progress,
-                            state: ValidatorStateV2::Test {
+                            state: ValidatorStateV1::Test {
                                 index_stage,
                                 index_lesson,
                                 index_suite,
@@ -325,7 +325,7 @@ impl StateMachine for ValidatorV2 {
                         },
                         (_, _, true, false) => Self {
                             progress,
-                            state: ValidatorStateV2::Suite {
+                            state: ValidatorStateV1::Suite {
                                 index_stage,
                                 index_lesson,
                                 index_suite: index_suite + 1,
@@ -334,7 +334,7 @@ impl StateMachine for ValidatorV2 {
                         },
                         (_, true, false, false) => Self {
                             progress,
-                            state: ValidatorStateV2::Lesson {
+                            state: ValidatorStateV1::Lesson {
                                 index_stage,
                                 index_lesson: index_lesson + 1,
                             },
@@ -342,40 +342,40 @@ impl StateMachine for ValidatorV2 {
                         },
                         (true, false, false, false) => Self {
                             progress,
-                            state: ValidatorStateV2::Stage {
+                            state: ValidatorStateV1::Stage {
                                 index_stage: index_stage + 1,
                             },
                             course,
                         },
                         (false, false, false, false) => Self {
                             progress,
-                            state: ValidatorStateV2::Pass,
+                            state: ValidatorStateV1::Pass,
                             course,
                         },
                     }
                 }
             }
-            ValidatorStateV2::Fail { reason } => {
+            ValidatorStateV1::Fail { reason } => {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", reason.red().bold()));
 
-                Self { progress, state: ValidatorStateV2::Finish, course }
+                Self { progress, state: ValidatorStateV1::Finish, course }
             }
-            ValidatorStateV2::Pass => {
+            ValidatorStateV1::Pass => {
                 progress.finish_and_clear();
                 progress.println(
                     "\n🏁 Course format is valid".green().bold().to_string(),
                 );
 
-                Self { progress, state: ValidatorStateV2::Finish, course }
+                Self { progress, state: ValidatorStateV1::Finish, course }
             }
-            ValidatorStateV2::Finish => {
-                Self { progress, state: ValidatorStateV2::Finish, course }
+            ValidatorStateV1::Finish => {
+                Self { progress, state: ValidatorStateV1::Finish, course }
             }
         }
     }
 
     fn is_finished(&self) -> bool {
-        self.state == ValidatorStateV2::Finish
+        self.state == ValidatorStateV1::Finish
     }
 }

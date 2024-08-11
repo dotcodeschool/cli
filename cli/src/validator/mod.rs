@@ -1,26 +1,23 @@
 use crate::monitor::StateMachine;
 
-use self::v2::ValidatorV2;
+use self::v1::ValidatorV1;
 
-pub mod v2;
+pub mod v1;
 
 pub enum ValidatorVersion {
-    V2(ValidatorV2),
-    Undefined,
+    V1(ValidatorV1),
 }
 
 impl StateMachine for ValidatorVersion {
     fn run(self) -> Self {
         match self {
-            Self::V2(validator) => Self::V2(validator.run()),
-            Self::Undefined => Self::Undefined,
+            Self::V1(validator) => Self::V1(validator.run()),
         }
     }
 
     fn is_finished(&self) -> bool {
         match self {
-            ValidatorVersion::V2(validator) => validator.is_finished(),
-            ValidatorVersion::Undefined => true,
+            ValidatorVersion::V1(validator) => validator.is_finished(),
         }
     }
 }

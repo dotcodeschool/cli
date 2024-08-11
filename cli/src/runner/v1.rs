@@ -1,8 +1,11 @@
 use std::ops::Deref;
 
 use indicatif::ProgressBar;
+use itertools::{FoldWhile, Itertools};
+use parity_scale_codec::{Decode, Encode};
 
 use crate::{
+    db::{TestState, ValidationState},
     monitor::StateMachine,
     parsing::{v1::JsonCourseV1, JsonTest, TestResult},
     str_res::OPTIONAL,
@@ -11,7 +14,6 @@ use crate::{
 use super::{format_bar, format_output, format_spinner, submodule_name};
 
 use colored::Colorize;
-use derive_more::Constructor;
 
 pub const TEST_DIR: &str = "./course";
 
@@ -49,7 +51,7 @@ pub const TEST_DIR: &str = "./course";
 ///     ]
 /// }
 /// ```
-///
+//
 /// Course Id will be checked against the DotCodeScool servers to make sure that
 /// the tests are being run in the correct git repository.
 ///
@@ -84,15 +86,14 @@ pub const TEST_DIR: &str = "./course";
 /// `cmd` defines which command to run for the test to execute. Like test
 /// suites, tests can be marked as `optional`. `optional` tests will still count
 /// towards the overall success of the course but do not need to be validated as
-/// part of a test suite.
-///
+// part of a test suite.
 /// * `progress`: number of tests left to run.
 /// * `course`: deserialized course information.
-#[derive(Constructor)]
 pub struct RunnerV1 {
     progress: ProgressBar,
     success: u32,
     state: RunnerStateV1,
+    tree: sled::Tree,
     course: JsonCourseV1,
 }
 
@@ -100,30 +101,70 @@ pub struct RunnerV1 {
 pub enum RunnerStateV1 {
     Loaded,
     Update,
-    NewSuite(usize),
-    NewTest(usize, usize),
-    Failed(String),
-    Passed,
+    NewSuite {
+        index_stage: usize,
+        index_lesson: usize,
+        index_suite: usize,
+    },
+    NewTest {
+        index_stage: usize,
+        index_lesson: usize,
+        index_suite: usize,
+        index_test: usize,
+    },
+    Fail(String),
+    Pass,
     Finish,
+}
+
+impl RunnerV1 {
+    pub fn new(
+        course: JsonCourseV1,
+        progress: ProgressBar,
+        tree: sled::Tree,
+    ) -> Self {
+        Self {
+            progress,
+            success: 0,
+            state: RunnerStateV1::Loaded,
+            tree,
+            course,
+        }
+    }
 }
 
 impl StateMachine for RunnerV1 {
     fn run(self) -> Self {
-        let Self { progress, mut success, state, course } = self;
+        let Self { progress, mut success, state, tree, course } = self;
 
         match state {
             // Genesis state, displays information about the course and the
             // number of exercises left.
             RunnerStateV1::Loaded => {
-                let test_count = course
-                    .suites
-                    .iter()
-                    .fold(0, |acc, suite| acc + suite.tests.len());
+                let exercise_count =
+                    course.stages.iter().fold(0, |acc, stage| {
+                        acc + stage.lessons.iter().fold(0, |acc, lesson| {
+                            acc + match &lesson.suites {
+                                Some(suites) => {
+                                    suites.iter().fold(0, |acc, suite| {
+                                        acc + suite.tests.len()
+                                    })
+                                }
+                                None => 0,
+                            }
+                        })
+                    });
                 progress.println(format!(
                     "\n📒 You have {} exercises left",
-                    test_count.to_string().bold()
+                    exercise_count.to_string().bold()
                 ));
-                Self { progress, success, state: RunnerStateV1::Update, course }
+                Self {
+                    progress,
+                    success,
+                    tree,
+                    state: RunnerStateV1::Update,
+                    course,
+                }
             }
             // Initializes all submodules and checks for tests updates. This
             // happens if the `TEST_DIR` submodule is out of date,
@@ -223,36 +264,82 @@ impl StateMachine for RunnerV1 {
                 }
 
                 format_bar(&progress);
-                Self {
-                    progress,
-                    success,
-                    state: RunnerStateV1::NewSuite(0),
-                    course,
+
+                match follow_path(&course, [0, 0]) {
+                    Some([index_stage, index_lesson]) => Self {
+                        progress,
+                        success,
+                        state: RunnerStateV1::NewSuite {
+                            index_stage,
+                            index_lesson,
+                            index_suite: 0,
+                        },
+                        tree,
+                        course,
+                    },
+                    None => Self {
+                        progress,
+                        success,
+                        state: RunnerStateV1::Pass,
+                        tree,
+                        course,
+                    },
                 }
             }
             // Displays the name of the current suite
-            RunnerStateV1::NewSuite(index_suite) => {
-                let suite = &course.suites[index_suite];
+            RunnerStateV1::NewSuite {
+                index_stage,
+                index_lesson,
+                index_suite,
+            } => {
+                let stage = &course.stages[index_stage];
+                let lesson = &stage.lessons[index_lesson];
+                let suite =
+                    &lesson.suites.as_ref().expect(
+                        "Runner should have detected a non-optioned suite",
+                    )[index_suite];
+
+                let stage_name =
+                    stage.name.deref().to_uppercase().bold().green();
+                let lesson_name =
+                    lesson.name.deref().to_uppercase().bold().green();
                 let suite_name =
                     suite.name.deref().to_uppercase().bold().green();
 
                 progress.println(format!(
-                    "\n{suite_name} {}",
+                    "\n{stage_name}\n╰─{lesson_name}\n  ╰─{suite_name} {}",
                     if suite.optional { &OPTIONAL } else { "" },
                 ));
 
                 Self {
                     progress,
                     success,
-                    state: RunnerStateV1::NewTest(index_suite, 0),
+                    state: RunnerStateV1::NewTest {
+                        index_stage,
+                        index_lesson,
+                        index_suite,
+                        index_test: 0,
+                    },
+                    tree,
                     course,
                 }
             }
             // Runs the current test. This state is responsible for exiting
             // into a Failed state in case a mandatory test
             // does not pass.
-            RunnerStateV1::NewTest(index_suite, index_test) => {
-                let suite = &course.suites[index_suite];
+            RunnerStateV1::NewTest {
+                index_stage,
+                index_lesson,
+                index_suite,
+                index_test,
+            } => {
+                let stage = &course.stages[index_stage];
+                let lesson = &stage.lessons[index_lesson];
+                let suites = lesson
+                    .suites
+                    .as_ref()
+                    .expect("Runner should have detected a non-optioned suite");
+                let suite = &suites[index_suite];
                 let test = &suite.tests[index_test];
                 let test_name = test.name.to_lowercase().bold();
 
@@ -266,6 +353,30 @@ impl StateMachine for RunnerV1 {
                 // Testing happens HERE
                 match test.run() {
                     TestResult::Pass(stdout) => {
+                        let key = format!(
+                            "{}{}{}{}{}",
+                            test.name,
+                            suite.name,
+                            lesson.name,
+                            stage.name,
+                            course.name
+                        )
+                        .encode();
+                        let query = tree.update_and_fetch(key, test_pass);
+
+                        if query.is_err() || matches!(query, Ok(None)) {
+                            return Self {
+                                progress,
+                                success,
+                                state: RunnerStateV1::Fail(format!(
+                                    "failed to update test {}",
+                                    test_name
+                                )),
+                                tree,
+                                course,
+                            };
+                        }
+
                         progress.println(format_output(
                             &stdout,
                             &format!("✅ {}", &test.message_on_success),
@@ -274,6 +385,30 @@ impl StateMachine for RunnerV1 {
                         success += 1;
                     }
                     TestResult::Fail(stderr) => {
+                        let key = format!(
+                            "{}{}{}{}{}",
+                            test.name,
+                            suite.name,
+                            lesson.name,
+                            stage.name,
+                            course.name
+                        )
+                        .encode();
+                        let query = tree.update_and_fetch(key, test_fail);
+
+                        if query.is_err() || matches!(query, Ok(None)) {
+                            return Self {
+                                progress,
+                                success,
+                                state: RunnerStateV1::Fail(format!(
+                                    "failed to update test {}",
+                                    test_name
+                                )),
+                                tree,
+                                course,
+                            };
+                        }
+
                         progress.println(
                             format_output(
                                 &stderr,
@@ -288,9 +423,10 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 success,
-                                state: RunnerStateV1::Failed(format!(
+                                state: RunnerStateV1::Fail(format!(
                                     "Failed test {test_name}"
                                 )),
+                                tree,
                                 course,
                             };
                         }
@@ -300,28 +436,63 @@ impl StateMachine for RunnerV1 {
                 // Moves on to the next text, the next suite, or marks the
                 // tests as Passed
                 match (
-                    index_suite + 1 < course.suites.len(),
+                    index_stage + 1 < course.stages.len(),
+                    index_suite + 1 < suites.len(),
                     index_test + 1 < suite.tests.len(),
                 ) {
-                    (_, true) => Self {
+                    (_, _, true) => Self {
                         progress,
                         success,
-                        state: RunnerStateV1::NewTest(
+                        state: RunnerStateV1::NewTest {
+                            index_stage,
+                            index_lesson,
                             index_suite,
-                            index_test + 1,
-                        ),
+                            index_test: index_test + 1,
+                        },
+                        tree,
                         course,
                     },
-                    (true, false) => Self {
+                    (_, true, false) => Self {
                         progress,
                         success,
-                        state: RunnerStateV1::NewSuite(index_suite + 1),
+                        state: RunnerStateV1::NewSuite {
+                            index_stage,
+                            index_lesson,
+                            index_suite: index_suite + 1,
+                        },
+                        tree,
                         course,
                     },
-                    (false, false) => Self {
+                    (true, false, false) => {
+                        match follow_path(
+                            &course,
+                            [index_stage, index_lesson + 1],
+                        ) {
+                            Some([index_stage, index_lesson]) => Self {
+                                progress,
+                                success,
+                                state: RunnerStateV1::NewSuite {
+                                    index_stage,
+                                    index_lesson,
+                                    index_suite: 0,
+                                },
+                                tree,
+                                course,
+                            },
+                            None => Self {
+                                progress,
+                                success,
+                                state: RunnerStateV1::Pass,
+                                tree,
+                                course,
+                            },
+                        }
+                    }
+                    (false, false, false) => Self {
                         progress,
                         success,
-                        state: RunnerStateV1::Passed,
+                        state: RunnerStateV1::Pass,
+                        tree,
                         course,
                     },
                 }
@@ -330,23 +501,38 @@ impl StateMachine for RunnerV1 {
             // defined in the `message_on_fail` field of a
             // Test JSON object. This state can also be used for general
             // error logging.
-            RunnerStateV1::Failed(msg) => {
+            RunnerStateV1::Fail(msg) => {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
-                Self { progress, success, state: RunnerStateV1::Finish, course }
+                Self {
+                    progress,
+                    success,
+                    state: RunnerStateV1::Finish,
+                    tree,
+                    course,
+                }
             }
             // ALL mandatory tests passed. Displays the success rate across
             // all tests. It is not important how low that
             // rate is, as long as all mandatory tests pass,
             // and simply serves as an indication of progress for the
             // student.
-            RunnerStateV1::Passed => {
+            RunnerStateV1::Pass => {
                 progress.finish_and_clear();
-                let exercise_count = course
-                    .suites
-                    .iter()
-                    .fold(0, |acc, suite| acc + suite.tests.len());
+                let exercise_count =
+                    course.stages.iter().fold(0, |acc, stage| {
+                        acc + stage.lessons.iter().fold(0, |acc, lesson| {
+                            acc + match &lesson.suites {
+                                Some(suites) => {
+                                    suites.iter().fold(0, |acc, suite| {
+                                        acc + suite.tests.len()
+                                    })
+                                }
+                                None => 0,
+                            }
+                        })
+                    });
                 let score = format!(
                     "{:.2}",
                     success as f64 / exercise_count as f64 * 100f64
@@ -357,16 +543,71 @@ impl StateMachine for RunnerV1 {
                     score.green().bold()
                 ));
 
-                Self { progress, success, state: RunnerStateV1::Finish, course }
+                Self {
+                    progress,
+                    success,
+                    state: RunnerStateV1::Finish,
+                    tree,
+                    course,
+                }
             }
             // Exit state, does nothing when called.
-            RunnerStateV1::Finish => {
-                Self { progress, success, state: RunnerStateV1::Finish, course }
-            }
+            RunnerStateV1::Finish => Self {
+                progress,
+                success,
+                state: RunnerStateV1::Finish,
+                tree,
+                course,
+            },
         }
     }
 
     fn is_finished(&self) -> bool {
         self.state == RunnerStateV1::Finish
     }
+}
+
+fn follow_path(course: &JsonCourseV1, path: [usize; 2]) -> Option<[usize; 2]> {
+    let [index_stage, index_lesson] = course
+        .stages
+        .iter()
+        .skip(path[0])
+        .enumerate()
+        .fold_while([0, 0], |mut acc, (i_stage, stage)| {
+            acc[0] = i_stage;
+            stage.lessons.iter().skip(path[1]).enumerate().fold_while(
+                acc,
+                |mut acc, (i_lesson, lesson)| {
+                    acc[1] = i_lesson;
+                    match &lesson.suites {
+                        Some(_) => FoldWhile::Done(acc),
+                        None => FoldWhile::Continue(acc),
+                    }
+                },
+            )
+        })
+        .into_inner();
+
+    let stage = &course.stages[index_stage];
+    let lesson = &stage.lessons[index_lesson];
+
+    lesson.suites.as_ref().map(|_| [index_stage, index_lesson])
+}
+
+fn test_pass(old: Option<&[u8]>) -> Option<Vec<u8>> {
+    let bytes = old?;
+    let mut test = TestState::decode(&mut &bytes[..]).ok()?;
+
+    test.passed = ValidationState::Pass;
+
+    Some(test.encode())
+}
+
+fn test_fail(old: Option<&[u8]>) -> Option<Vec<u8>> {
+    let bytes = old?;
+    let mut test = TestState::decode(&mut &bytes[..]).ok()?;
+
+    test.passed = ValidationState::Fail;
+
+    Some(test.encode())
 }

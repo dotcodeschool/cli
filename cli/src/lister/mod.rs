@@ -1,23 +1,23 @@
 use crate::monitor::StateMachine;
 
-use self::v2::ListerV2;
+use self::v1::ListerV1;
 
-pub mod v2;
+pub mod v1;
 
 pub enum ListerVersion {
-    V2(ListerV2),
+    V1(ListerV1),
 }
 
 impl StateMachine for ListerVersion {
     fn run(self) -> Self {
         match self {
-            ListerVersion::V2(lister) => ListerVersion::V2(lister.run()),
+            ListerVersion::V1(lister) => ListerVersion::V1(lister.run()),
         }
     }
 
     fn is_finished(&self) -> bool {
         match self {
-            ListerVersion::V2(lister) => lister.is_finished(),
+            ListerVersion::V1(lister) => lister.is_finished(),
         }
     }
 }

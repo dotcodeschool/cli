@@ -6,18 +6,14 @@ use parity_scale_codec::Decode;
 use crate::{
     db::{db_open, db_should_update, db_update, DbError, KEY_TESTS},
     lister::{
-        v2::{ListerStateV2, ListerV2},
+        v1::{ListerStateV1, ListerV1},
         ListerVersion,
     },
     parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
-    runner::{
-        v1::{RunnerStateV1, RunnerV1},
-        v2::RunnerV2,
-        RunnerVersion,
-    },
+    runner::{v1::RunnerV1, RunnerVersion},
     str_res::DOTCODESCHOOL,
     validator::{
-        v2::{ValidatorStateV2, ValidatorV2},
+        v1::{ValidatorStateV1, ValidatorV1},
         ValidatorVersion,
     },
 };
@@ -73,19 +69,6 @@ impl Monitor {
 
         match course {
             JsonCourseVersion::V1(course) => {
-                let test_count = course
-                    .suites
-                    .iter()
-                    .fold(0, |acc, suite| acc + suite.tests.len());
-
-                progress.set_length(test_count as u64);
-
-                let runner =
-                    RunnerV1::new(progress, 0, RunnerStateV1::Loaded, course);
-
-                RunnerVersion::V1(runner)
-            }
-            JsonCourseVersion::V2(course) => {
                 let test_count = course.stages.iter().fold(0, |acc, stage| {
                     acc + stage.lessons.iter().fold(0, |acc, lesson| {
                         acc + match &lesson.suites {
@@ -99,9 +82,9 @@ impl Monitor {
 
                 progress.set_length(test_count as u64);
 
-                let runner = RunnerV2::new(course, progress, tree);
+                let runner = RunnerV1::new(course, progress, tree);
 
-                RunnerVersion::V2(runner)
+                RunnerVersion::V1(runner)
             }
         }
     }
@@ -112,8 +95,7 @@ impl Monitor {
         let Self { course, progress, .. } = self;
 
         match course {
-            JsonCourseVersion::V1(_) => ValidatorVersion::Undefined,
-            JsonCourseVersion::V2(course) => {
+            JsonCourseVersion::V1(course) => {
                 let slug_count =
                     1 + course.stages.iter().fold(0, |acc, stage| {
                         acc + 1
@@ -133,13 +115,13 @@ impl Monitor {
 
                 progress.set_length(slug_count as u64);
 
-                let validator = ValidatorV2::new(
+                let validator = ValidatorV1::new(
                     progress,
-                    ValidatorStateV2::Loaded,
+                    ValidatorStateV1::Loaded,
                     course,
                 );
 
-                ValidatorVersion::V2(validator)
+                ValidatorVersion::V1(validator)
             }
         }
     }
@@ -148,8 +130,7 @@ impl Monitor {
         let Self { course, progress, tree, .. } = self;
 
         match course {
-            JsonCourseVersion::V1(_) => todo!(),
-            JsonCourseVersion::V2(_) => {
+            JsonCourseVersion::V1(_) => {
                 let bytes = tree
                     .get(KEY_TESTS)
                     .map_err(|err| {
@@ -165,11 +146,11 @@ impl Monitor {
                         )
                     })?;
 
-                Ok(ListerVersion::V2(ListerV2 {
+                Ok(ListerVersion::V1(ListerV1 {
                     progress,
                     tests,
                     tree,
-                    state: ListerStateV2::Loaded,
+                    state: ListerStateV1::Loaded,
                 }))
             }
         }
