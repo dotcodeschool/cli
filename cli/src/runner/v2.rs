@@ -14,7 +14,6 @@ use crate::{
 use super::{format_bar, format_output, format_spinner, submodule_name};
 
 use colored::Colorize;
-use derive_more::Constructor;
 
 pub const TEST_DIR: &str = "./course";
 
@@ -87,11 +86,9 @@ pub const TEST_DIR: &str = "./course";
 /// `cmd` defines which command to run for the test to execute. Like test
 /// suites, tests can be marked as `optional`. `optional` tests will still count
 /// towards the overall success of the course but do not need to be validated as
-/// part of a test suite.
-///
+// part of a test suite.
 /// * `progress`: number of tests left to run.
 /// * `course`: deserialized course information.
-#[derive(Constructor)]
 pub struct RunnerV2 {
     progress: ProgressBar,
     success: u32,
@@ -118,6 +115,22 @@ pub enum RunnerStateV2 {
     Fail(String),
     Pass,
     Finish,
+}
+
+impl RunnerV2 {
+    pub fn new(
+        course: JsonCourseV2,
+        progress: ProgressBar,
+        tree: sled::Tree,
+    ) -> Self {
+        Self {
+            progress,
+            success: 0,
+            state: RunnerStateV2::Loaded,
+            tree,
+            course,
+        }
+    }
 }
 
 impl StateMachine for RunnerV2 {
@@ -340,7 +353,15 @@ impl StateMachine for RunnerV2 {
                 // Testing happens HERE
                 match test.run() {
                     TestResult::Pass(stdout) => {
-                        let key = test.name.encode();
+                        let key = format!(
+                            "{}{}{}{}{}",
+                            test.name,
+                            suite.name,
+                            lesson.name,
+                            stage.name,
+                            course.name
+                        )
+                        .encode();
                         let query = tree.update_and_fetch(key, test_pass);
 
                         if query.is_err() || matches!(query, Ok(None)) {
@@ -364,7 +385,15 @@ impl StateMachine for RunnerV2 {
                         success += 1;
                     }
                     TestResult::Fail(stderr) => {
-                        let key = test.name.encode();
+                        let key = format!(
+                            "{}{}{}{}{}",
+                            test.name,
+                            suite.name,
+                            lesson.name,
+                            stage.name,
+                            course.name
+                        )
+                        .encode();
                         let query = tree.update_and_fetch(key, test_fail);
 
                         if query.is_err() || matches!(query, Ok(None)) {

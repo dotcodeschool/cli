@@ -54,17 +54,18 @@ impl StateMachine for ListerV2 {
                 }
             }
             ListerStateV2::List { index_test } => {
-                let test_name = &tests[index_test];
+                let key_str = &tests[index_test];
+                let key = key_str.encode();
+                let query = db.get(&key);
 
-                let key = test_name.encode();
-                let test = db.get(&key);
-
-                match test {
+                match query {
                     Ok(Some(bytes)) => {
                         let TestState { path, passed } =
                             TestState::decode(&mut &bytes[..]).unwrap();
 
                         let path_to = path[..(path.len() - 1)].join("/");
+                        let test_name = path.last().unwrap();
+
                         match passed {
                             ValidationState::Unkown => {
                                 progress.println(format!(

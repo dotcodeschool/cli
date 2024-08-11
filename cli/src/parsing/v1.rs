@@ -1,4 +1,7 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+
+use crate::db::TestState;
 
 use super::{JsonCourse, JsonTest, TestResult};
 
@@ -64,7 +67,7 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
         &self.instructor
     }
 
-    fn list_tests(&self) -> Vec<crate::db::TestState> {
+    fn list_tests(&self) -> IndexMap<String, TestState> {
         todo!()
     }
 }

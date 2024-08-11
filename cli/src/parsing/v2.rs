@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
@@ -164,23 +165,32 @@ impl<'a> JsonCourse<'a> for JsonCourseV2 {
         &self.author.name
     }
 
-    fn list_tests(&self) -> Vec<crate::db::TestState> {
+    fn list_tests(&self) -> IndexMap<String, TestState> {
         let Self { stages, name, .. } = self;
 
-        stages.iter().fold(vec![], |acc, stage| {
+        stages.iter().fold(IndexMap::new(), |acc, stage| {
             stage.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
                 Some(suites) => suites.iter().fold(acc, |acc, suite| {
                     suite.tests.iter().fold(acc, |mut acc, test| {
-                        acc.push(TestState {
-                            path: vec![
-                                name.clone(),
-                                stage.name.clone(),
-                                lesson.name.clone(),
-                                suite.name.clone(),
-                                test.name.clone(),
-                            ],
-                            passed: ValidationState::Unkown,
-                        });
+                        let key = format!(
+                            "{}{}{}{}{}",
+                            test.name,
+                            suite.name,
+                            lesson.name,
+                            stage.name,
+                            name
+                        );
+                        let path = vec![
+                            name.clone(),
+                            stage.name.clone(),
+                            lesson.name.clone(),
+                            suite.name.clone(),
+                            test.name.clone(),
+                        ];
+                        let test =
+                            TestState { passed: ValidationState::Unkown, path };
+
+                        acc.insert(key, test);
                         acc
                     })
                 }),

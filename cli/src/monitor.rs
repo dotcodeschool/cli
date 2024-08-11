@@ -12,7 +12,7 @@ use crate::{
     parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
     runner::{
         v1::{RunnerStateV1, RunnerV1},
-        v2::{RunnerStateV2, RunnerV2},
+        v2::RunnerV2,
         RunnerVersion,
     },
     str_res::DOTCODESCHOOL,
@@ -99,13 +99,7 @@ impl Monitor {
 
                 progress.set_length(test_count as u64);
 
-                let runner = RunnerV2::new(
-                    progress,
-                    0,
-                    RunnerStateV2::Loaded,
-                    tree,
-                    course,
-                );
+                let runner = RunnerV2::new(course, progress, tree);
 
                 RunnerVersion::V2(runner)
             }

@@ -1,10 +1,10 @@
-use std::{ops::Deref, os::unix::fs::MetadataExt};
+use std::os::unix::fs::MetadataExt;
 
 use blake2::{
     digest::{Update, VariableOutput},
     Blake2bVar,
 };
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use parity_scale_codec::{Decode, Encode};
 use thiserror::Error;
 
@@ -102,68 +102,55 @@ pub fn db_should_update(
 // TODO: support tests with the same name but different paths
 pub fn db_update(
     tree: &sled::Tree,
-    tests_new: &[TestState],
+    tests_new: &IndexMap<String, TestState>,
 ) -> Result<(), DbError> {
     let tests_old = tree
         .get(KEY_TESTS)
         .map_err(|err| DbError::DbGet(hex::encode(KEY_TESTS), err.to_string()))?
-        .map(|bytes| Vec::<String>::decode(&mut &bytes[..]).unwrap());
+        .map(|bytes| <Vec<String>>::decode(&mut &bytes[..]).unwrap());
 
     // Db already contains tests for this course file.
     if let Some(tests_old) = tests_old {
-        let tests_old_set = tests_old.iter().collect::<IndexSet<_>>();
-        let tests_new_set = tests_new
+        let tests_keys_old = tests_old.into_iter().collect::<IndexSet<_>>();
+        let tests_keys_new = tests_new
             .iter()
-            .map(|test| {
-                test.path.last().expect("TestState path cannot be empty")
-            })
+            .map(|(key, _)| key.clone())
             .collect::<IndexSet<_>>();
 
-        let tests_deprecated = tests_old_set
-            .difference(&tests_new_set)
-            .map(|test| test.deref())
-            .cloned()
-            .collect::<Vec<_>>();
+        let test_keys_deprecated =
+            tests_keys_old.difference(&tests_keys_new).collect::<Vec<_>>();
 
         // Removes all tests which are no longer in course file
-        for test_name in tests_deprecated {
-            let key = test_name.encode();
+        for key_str in test_keys_deprecated {
+            let key = key_str.encode();
             tree.remove(&key).map_err(|err| {
                 DbError::DbRemove(hex::encode(&key), err.to_string())
             })?;
         }
 
-        let tests_unkown = tests_new_set
-            .difference(&tests_old_set)
-            .map(|test| test.deref())
-            .cloned()
-            // This is possible because Indexmap maintains insertion order
-            .zip(tests_new)
-            .collect::<Vec<_>>();
+        let tests_keys_unkown =
+            tests_keys_new.difference(&tests_keys_old).collect::<Vec<_>>();
 
         // Inserts tests which were not already in the course file
-        for (test_name, test) in tests_unkown {
-            let key = test_name.encode();
+        for key_str in tests_keys_unkown {
+            let key = key_str.encode();
+            let test = tests_new.get(key_str).unwrap();
+
             tree.insert(&key, test.encode()).map_err(|err| {
                 DbError::DbInsert(hex::encode(&key), err.to_string())
             })?;
         }
 
         // Updates the list of available tests
-        let tests_new_names = tests_new_set.iter().collect::<Vec<_>>();
-        tree.insert(KEY_TESTS, tests_new_names.encode()).map_err(|err| {
+        let test_keys_new = tests_keys_new.iter().collect::<Vec<_>>();
+        tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
             DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
         })?;
     // Db does not already contain tests for the current course file
     } else {
         // Inserts all new tests
-        let mut tests_new_name = Vec::with_capacity(tests_new.len());
-        for test in tests_new {
-            let test_name =
-                test.path.last().expect("TestState path cannot be empty");
-            tests_new_name.push(test_name);
-
-            let key = test_name.encode();
+        for (key_str, test) in tests_new.iter() {
+            let key = key_str.encode();
 
             tree.insert(&key, test.encode()).map_err(|err| {
                 DbError::DbInsert(hex::encode(&key), err.to_string())
@@ -171,7 +158,9 @@ pub fn db_update(
         }
 
         // Updates the list of available tests
-        tree.insert(KEY_TESTS, tests_new_name.encode()).map_err(|err| {
+        let test_keys_new =
+            tests_new.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+        tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
             DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
         })?;
     }

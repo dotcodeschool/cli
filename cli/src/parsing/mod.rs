@@ -4,6 +4,7 @@
 //! executing providing an implementation for executing tests. The actual
 //! execution is the responsibility of the test [runner].
 
+use indexmap::IndexMap;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -33,7 +34,7 @@ pub enum TestResult {
 pub trait JsonCourse<'a> {
     fn name(&'a self) -> &'a str;
     fn author(&'a self) -> &'a str;
-    fn list_tests(&self) -> Vec<TestState>;
+    fn list_tests(&self) -> IndexMap<String, TestState>;
 }
 
 pub trait JsonTest {
@@ -60,7 +61,7 @@ impl<'a> JsonCourse<'a> for JsonCourseVersion {
         }
     }
 
-    fn list_tests(&self) -> Vec<TestState> {
+    fn list_tests(&self) -> IndexMap<String, TestState> {
         match self {
             JsonCourseVersion::V1(course) => course.list_tests(),
             JsonCourseVersion::V2(course) => course.list_tests(),
