@@ -30,7 +30,7 @@ pub enum TestResult {
 pub trait JsonCourse<'a> {
     fn name(&'a self) -> &'a str;
     fn author(&'a self) -> &'a str;
-    fn list_tests(&self) -> IndexMap<String, TestState>;
+    fn list_tests(&self) -> IndexMap<Vec<u8>, TestState>;
 }
 
 pub trait JsonTest {

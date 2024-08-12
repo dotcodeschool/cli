@@ -1,10 +1,12 @@
+use hex::decode;
 use indicatif::ProgressBar;
 
 use colored::Colorize;
-use parity_scale_codec::Decode;
+use itertools::{FoldWhile, Itertools};
+use parity_scale_codec::{Decode, Encode};
 
 use crate::{
-    db::{db_open, db_should_update, db_update, DbError, KEY_TESTS},
+    db::{db_open, db_should_update, db_update, DbError, TestState, KEY_TESTS},
     lister::{
         v1::{ListerStateV1, ListerV1},
         ListerVersion,
@@ -62,10 +64,71 @@ impl Monitor {
 
     /// Creates a new [Runner] instance depending on the version specified in
     /// the course json config file.
-    pub fn into_runner(self) -> RunnerVersion {
+    pub fn into_runner(
+        self,
+        test_name: Option<String>,
+    ) -> Result<RunnerVersion, DbError> {
         self.greet();
 
         let Self { course, progress, tree, .. } = self;
+
+        let tests = match test_name {
+            Some(test_name) => {
+                let tests = tree.scan_prefix(test_name.encode()).fold_while(
+                    vec![],
+                    |mut acc, query| match query {
+                        Ok((key, bytes)) => {
+                            acc.push(
+                                TestState::decode(&mut &bytes[..]).map_err(
+                                    |err| {
+                                        DbError::DecodeError(
+                                            hex::encode(key),
+                                            err.to_string(),
+                                        )
+                                    },
+                                ),
+                            );
+                            FoldWhile::Continue(acc)
+                        }
+                        Err(_) => FoldWhile::Done(vec![]),
+                    },
+                );
+
+                tests.into_inner()
+            }
+            None => {
+                let test_names = match tree.get(KEY_TESTS) {
+                    Ok(Some(bytes)) => {
+                        <Vec<String>>::decode(&mut &bytes[..]).unwrap()
+                    }
+                    _ => vec![],
+                };
+
+                let tests = test_names
+                    .into_iter()
+                    .map(|key| (key.clone(), tree.get(key.encode())))
+                    .fold_while(vec![], |mut acc, (key, query)| match query {
+                        Ok(Some(bytes)) => {
+                            acc.push(
+                                TestState::decode(&mut &bytes[..]).map_err(
+                                    |err| {
+                                        DbError::DecodeError(
+                                            hex::encode(key),
+                                            err.to_string(),
+                                        )
+                                    },
+                                ),
+                            );
+                            FoldWhile::Continue(acc)
+                        }
+                        _ => FoldWhile::Done(vec![]),
+                    });
+
+                tests.into_inner()
+            }
+        }
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -84,7 +147,7 @@ impl Monitor {
 
                 let runner = RunnerV1::new(course, progress, tree);
 
-                RunnerVersion::V1(runner)
+                Ok(RunnerVersion::V1(runner))
             }
         }
     }

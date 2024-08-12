@@ -41,8 +41,16 @@ pub enum ValidationState {
 }
 
 #[derive(Encode, Decode, Debug)]
+pub enum PathLink {
+    Link(String),
+    LinkOptional(String),
+}
+
+#[derive(Encode, Decode, Debug)]
 pub struct TestState {
-    pub path: Vec<String>,
+    pub name: String,
+    pub cmd: Vec<String>,
+    pub path: Vec<PathLink>,
     pub passed: ValidationState,
 }
 

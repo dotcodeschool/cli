@@ -89,53 +89,46 @@ pub const TEST_DIR: &str = "./course";
 // part of a test suite.
 /// * `progress`: number of tests left to run.
 /// * `course`: deserialized course information.
-pub struct RunnerV1 {
+pub struct RunnerV1<'a> {
     progress: ProgressBar,
+    course: JsonCourseV1,
+    tree: sled::Tree,
+    tests: &'a [TestState],
     success: u32,
     state: RunnerStateV1,
-    tree: sled::Tree,
-    course: JsonCourseV1,
 }
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum RunnerStateV1 {
     Loaded,
     Update,
-    NewSuite {
-        index_stage: usize,
-        index_lesson: usize,
-        index_suite: usize,
-    },
-    NewTest {
-        index_stage: usize,
-        index_lesson: usize,
-        index_suite: usize,
-        index_test: usize,
-    },
+    NewTest { index_test: usize },
     Fail(String),
     Pass,
     Finish,
 }
 
-impl RunnerV1 {
+impl<'a> RunnerV1<'a> {
     pub fn new(
-        course: JsonCourseV1,
         progress: ProgressBar,
+        course: JsonCourseV1,
         tree: sled::Tree,
+        tests: &'a [TestState],
     ) -> Self {
         Self {
             progress,
+            course,
+            tree,
+            tests,
             success: 0,
             state: RunnerStateV1::Loaded,
-            tree,
-            course,
         }
     }
 }
 
-impl StateMachine for RunnerV1 {
+impl<'a> StateMachine for RunnerV1<'a> {
     fn run(self) -> Self {
-        let Self { progress, mut success, state, tree, course } = self;
+        let Self { progress, course, tree, tests, success, state } = self;
 
         match state {
             // Genesis state, displays information about the course and the
@@ -160,10 +153,11 @@ impl StateMachine for RunnerV1 {
                 ));
                 Self {
                     progress,
-                    success,
-                    tree,
-                    state: RunnerStateV1::Update,
                     course,
+                    tree,
+                    tests,
+                    success,
+                    state: RunnerStateV1::Update,
                 }
             }
             // Initializes all submodules and checks for tests updates. This
@@ -265,83 +259,39 @@ impl StateMachine for RunnerV1 {
 
                 format_bar(&progress);
 
-                match follow_path(&course, [0, 0]) {
-                    Some([index_stage, index_lesson]) => Self {
+                if tests.is_empty() {
+                    Self {
                         progress,
-                        success,
-                        state: RunnerStateV1::NewSuite {
-                            index_stage,
-                            index_lesson,
-                            index_suite: 0,
-                        },
-                        tree,
                         course,
-                    },
-                    None => Self {
+                        tree,
+                        tests,
+                        success,
+                        state: RunnerStateV1::Fail(
+                            "🚫 no tests found".to_string(),
+                        ),
+                    }
+                } else {
+                    Self {
                         progress,
-                        success,
-                        state: RunnerStateV1::Pass,
-                        tree,
                         course,
-                    },
-                }
-            }
-            // Displays the name of the current suite
-            RunnerStateV1::NewSuite {
-                index_stage,
-                index_lesson,
-                index_suite,
-            } => {
-                let stage = &course.stages[index_stage];
-                let lesson = &stage.lessons[index_lesson];
-                let suite =
-                    &lesson.suites.as_ref().expect(
-                        "Runner should have detected a non-optioned suite",
-                    )[index_suite];
-
-                let stage_name =
-                    stage.name.deref().to_uppercase().bold().green();
-                let lesson_name =
-                    lesson.name.deref().to_uppercase().bold().green();
-                let suite_name =
-                    suite.name.deref().to_uppercase().bold().green();
-
-                progress.println(format!(
-                    "\n{stage_name}\n╰─{lesson_name}\n  ╰─{suite_name} {}",
-                    if suite.optional { &OPTIONAL } else { "" },
-                ));
-
-                Self {
-                    progress,
-                    success,
-                    state: RunnerStateV1::NewTest {
-                        index_stage,
-                        index_lesson,
-                        index_suite,
-                        index_test: 0,
-                    },
-                    tree,
-                    course,
+                        tree,
+                        tests,
+                        success,
+                        state: RunnerStateV1::NewTest { index_test: 0 },
+                    }
                 }
             }
             // Runs the current test. This state is responsible for exiting
             // into a Failed state in case a mandatory test
             // does not pass.
-            RunnerStateV1::NewTest {
-                index_stage,
-                index_lesson,
-                index_suite,
-                index_test,
-            } => {
-                let stage = &course.stages[index_stage];
-                let lesson = &stage.lessons[index_lesson];
-                let suites = lesson
-                    .suites
-                    .as_ref()
-                    .expect("Runner should have detected a non-optioned suite");
-                let suite = &suites[index_suite];
-                let test = &suite.tests[index_test];
-                let test_name = test.name.to_lowercase().bold();
+            RunnerStateV1::NewTest { index_test } => {
+                let test = &tests[index_test];
+                let test_name = test.name;
+
+                progress.println(format!(
+                    "\n{stage_name}\n╰─{lesson_name}\n  ╰─{suite_name} {}",
+                    if suite.optional { &OPTIONAL } else { "" },
+                ));
 
                 progress.println(format!(
                     "\n  🧪 Running test {test_name} {}",

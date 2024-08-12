@@ -1,8 +1,9 @@
 use indexmap::IndexMap;
+use parity_scale_codec::Encode;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
-    db::{TestState, ValidationState},
+    db::{PathLink, TestState, ValidationState},
     parsing::TestResult,
 };
 
@@ -165,7 +166,8 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
         &self.author.name
     }
 
-    fn list_tests(&self) -> IndexMap<String, TestState> {
+    // TODO: remove copy
+    fn list_tests(&self) -> IndexMap<Vec<u8>, TestState> {
         let Self { stages, name, .. } = self;
 
         stages.iter().fold(IndexMap::new(), |acc, stage| {
@@ -179,16 +181,32 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
                             lesson.name,
                             stage.name,
                             name
-                        );
+                        )
+                        .encode();
+
+                        let cmd = test
+                            .cmd
+                            .split_whitespace()
+                            .map(|arg| arg.to_string())
+                            .collect::<Vec<_>>();
+
                         let path = vec![
-                            name.clone(),
-                            stage.name.clone(),
-                            lesson.name.clone(),
-                            suite.name.clone(),
-                            test.name.clone(),
+                            PathLink::Link(stage.name.clone()),
+                            PathLink::Link(lesson.name.clone()),
+                            if suite.optional {
+                                PathLink::LinkOptional(suite.name.clone())
+                            } else {
+                                PathLink::Link(suite.name.clone())
+                            },
+                            PathLink::Link(test.name.clone()),
                         ];
-                        let test =
-                            TestState { passed: ValidationState::Unkown, path };
+
+                        let test = TestState {
+                            name: test.name.clone(),
+                            cmd,
+                            path,
+                            passed: ValidationState::Unkown,
+                        };
 
                         acc.insert(key, test);
                         acc
