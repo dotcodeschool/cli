@@ -1,5 +1,5 @@
 use chrono::Local;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use db::{DbError, PATH_DB};
 use env_logger::Builder;
 use monitor::{Monitor, StateMachine};
@@ -27,11 +27,27 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     #[command(name = "test")]
-    Test { name: Option<String> },
+    Test(TestArgs),
     #[command(name = "check")]
     Check,
-    #[command(name = "list")]
-    List,
+}
+
+#[derive(Args, Debug)]
+#[group(required = false, multiple = false)]
+struct TestArgs {
+    #[arg(group = "exclusive")]
+    name: Option<String>,
+    #[command(flatten)]
+    options: TestOptions,
+}
+
+#[derive(Args, Debug)]
+#[group(required = false, multiple = false)]
+struct TestOptions {
+    #[arg(long, group = "exclusive")]
+    list: bool,
+    #[arg(long, group = "exclusive")]
+    staggered: bool,
 }
 
 fn main() -> Result<(), DbError> {
@@ -60,11 +76,21 @@ fn main() -> Result<(), DbError> {
     let monitor = Monitor::new(path_db, path_course)?;
 
     match args.command {
-        Command::Test { name } => {
-            let mut runner = monitor.into_runner(name)?;
+        Command::Test(TestArgs { name, options }) => {
+            if options.list {
+                let mut lister = monitor.into_lister()?;
 
-            while !runner.is_finished() {
-                runner = runner.run();
+                while !lister.is_finished() {
+                    lister = lister.run();
+                }
+            } else if options.staggered {
+                todo!()
+            } else {
+                let mut runner = monitor.into_runner(name)?;
+
+                while !runner.is_finished() {
+                    runner = runner.run();
+                }
             }
         }
         Command::Check => {
@@ -72,13 +98,6 @@ fn main() -> Result<(), DbError> {
 
             while !validator.is_finished() {
                 validator = validator.run();
-            }
-        }
-        Command::List => {
-            let mut lister = monitor.into_lister()?;
-
-            while !lister.is_finished() {
-                lister = lister.run();
             }
         }
     }
