@@ -92,6 +92,8 @@ pub struct RunnerV1 {
     tests: Vec<(IVec, TestState)>,
     success: u32,
     state: RunnerStateV1,
+    on_pass: Box<dyn Fn()>,
+    on_fail: Box<dyn Fn()>,
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -110,13 +112,44 @@ impl RunnerV1 {
         tree: sled::Tree,
         tests: Vec<(IVec, TestState)>,
     ) -> Self {
-        Self { progress, tree, tests, success: 0, state: RunnerStateV1::Loaded }
+        Self {
+            progress,
+            tree,
+            tests,
+            success: 0,
+            state: RunnerStateV1::Loaded,
+            on_pass: Box::new(|| {}),
+            on_fail: Box::new(|| {}),
+        }
+    }
+
+    pub fn new_with_hooks<F1, F2>(
+        progress: ProgressBar,
+        tree: sled::Tree,
+        tests: Vec<(IVec, TestState)>,
+        on_pass: F1,
+        on_fail: F2,
+    ) -> Self
+    where
+        F1: Fn() + 'static,
+        F2: Fn() + 'static,
+    {
+        Self {
+            progress,
+            tree,
+            tests,
+            success: 0,
+            state: RunnerStateV1::Loaded,
+            on_pass: Box::new(on_pass),
+            on_fail: Box::new(on_fail),
+        }
     }
 }
 
 impl StateMachine for RunnerV1 {
     fn run(self) -> Self {
-        let Self { progress, tree, tests, success, state } = self;
+        let Self { progress, tree, tests, success, state, on_pass, on_fail } =
+            self;
 
         match state {
             // Genesis state, displays information about the course and the
@@ -132,6 +165,8 @@ impl StateMachine for RunnerV1 {
                     tests,
                     success,
                     state: RunnerStateV1::Update,
+                    on_pass,
+                    on_fail,
                 }
             }
             // Initializes all submodules and checks for tests updates. This
@@ -242,6 +277,8 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Fail(
                             "🚫 no tests found".to_string(),
                         ),
+                        on_pass,
+                        on_fail,
                     }
                 } else {
                     Self {
@@ -250,6 +287,8 @@ impl StateMachine for RunnerV1 {
                         tests,
                         success,
                         state: RunnerStateV1::NewTest { index_test: 0 },
+                        on_pass,
+                        on_fail,
                     }
                 }
             }
@@ -279,6 +318,8 @@ impl StateMachine for RunnerV1 {
                                 tests,
                                 success,
                                 state,
+                                on_pass,
+                                on_fail,
                             };
                         }
 
@@ -306,6 +347,8 @@ impl StateMachine for RunnerV1 {
                                 tests,
                                 success,
                                 state,
+                                on_pass,
+                                on_fail,
                             };
                         }
 
@@ -334,6 +377,8 @@ impl StateMachine for RunnerV1 {
                                 tests,
                                 success,
                                 state,
+                                on_pass,
+                                on_fail,
                             };
                         }
                     }
@@ -349,6 +394,8 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::NewTest {
                             index_test: index_test + 1,
                         },
+                        on_pass,
+                        on_fail,
                     }
                 } else {
                     Self {
@@ -357,6 +404,8 @@ impl StateMachine for RunnerV1 {
                         tests,
                         success: success + 1,
                         state: RunnerStateV1::Pass,
+                        on_pass,
+                        on_fail,
                     }
                 }
             }
@@ -368,12 +417,16 @@ impl StateMachine for RunnerV1 {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
+                on_fail();
+
                 Self {
                     progress,
                     tree,
                     tests,
                     success,
                     state: RunnerStateV1::Finish,
+                    on_pass,
+                    on_fail,
                 }
             }
             // ALL mandatory tests passed. Displays the success rate across
@@ -393,12 +446,16 @@ impl StateMachine for RunnerV1 {
                     score.green().bold()
                 ));
 
+                on_pass();
+
                 Self {
                     progress,
                     tree,
                     tests,
                     success,
                     state: RunnerStateV1::Finish,
+                    on_pass,
+                    on_fail,
                 }
             }
             // Exit state, does nothing when called.
@@ -408,6 +465,8 @@ impl StateMachine for RunnerV1 {
                 tests,
                 success,
                 state: RunnerStateV1::Finish,
+                on_pass,
+                on_fail,
             },
         }
     }

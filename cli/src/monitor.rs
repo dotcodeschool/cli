@@ -2,15 +2,18 @@ use indicatif::ProgressBar;
 
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
-use parity_scale_codec::Decode;
+use parity_scale_codec::{Decode, Encode};
 use sled::IVec;
 
 use crate::{
-    db::{db_open, db_should_update, db_update, DbError, TestState, KEY_TESTS},
+    db::{
+        db_open, db_should_update, db_update, DbError, TestState,
+        KEY_STAGGERED, KEY_TESTS,
+    },
     lister::{v1::ListerV1, ListerVersion},
     parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
     runner::{v1::RunnerV1, RunnerVersion},
-    str_res::DOTCODESCHOOL,
+    str_res::{DOTCODESCHOOL, STAGGERED},
     validator::{
         v1::{ValidatorStateV1, ValidatorV1},
         ValidatorVersion,
@@ -83,6 +86,62 @@ impl Monitor {
                 progress.set_length(tests.len() as u64);
 
                 let runner = RunnerV1::new(progress, tree, tests);
+
+                Ok(RunnerVersion::V1(runner))
+            }
+        }
+    }
+
+    pub fn into_runner_staggered(self) -> Result<RunnerVersion, DbError> {
+        self.greet();
+
+        let Self { course, progress, tree, .. } = self;
+
+        progress.println(format!("\n{}", STAGGERED.clone()));
+
+        let query = tree.get(KEY_STAGGERED).map_err(|err| {
+            DbError::DbGet(hex::encode(KEY_STAGGERED), err.to_string())
+        })?;
+
+        let staggered = match query {
+            Some(bytes) => u32::decode(&mut &bytes[..]).map_err(|err| {
+                DbError::DecodeError(
+                    hex::encode(KEY_STAGGERED),
+                    err.to_string(),
+                )
+            })?,
+            None => 1,
+        };
+
+        let tests = Self::tests_accumulate_some(&tree, staggered as usize)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        match course {
+            JsonCourseVersion::V1(course) => {
+                let test_count = course.stages.iter().fold(0, |acc, stage| {
+                    acc + stage.lessons.iter().fold(0, |acc, lesson| {
+                        acc + match &lesson.suites {
+                            Some(suites) => suites
+                                .iter()
+                                .fold(0, |acc, suite| acc + suite.tests.len()),
+                            None => 0,
+                        }
+                    })
+                });
+
+                progress.set_length(test_count as u64);
+
+                let runner = RunnerV1::new_with_hooks(
+                    progress,
+                    tree.clone(),
+                    tests,
+                    move || {
+                        let staggered = staggered + 1;
+                        tree.insert(KEY_STAGGERED, staggered.encode()).unwrap();
+                    },
+                    || {},
+                );
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -194,6 +253,39 @@ impl Monitor {
 
         let tests = test_names
             .into_iter()
+            .map(|key| {
+                let query = tree.get(&key);
+                (IVec::from(key), query)
+            })
+            .fold_while(vec![], |mut acc, (key, query)| match query {
+                Ok(Some(bytes)) => {
+                    acc.push(match TestState::decode(&mut &bytes[..]) {
+                        Ok(test_state) => Ok((key, test_state)),
+                        Err(e) => Err(DbError::DecodeError(
+                            hex::encode(key),
+                            e.to_string(),
+                        )),
+                    });
+                    FoldWhile::Continue(acc)
+                }
+                _ => FoldWhile::Done(vec![]),
+            });
+
+        tests.into_inner()
+    }
+
+    fn tests_accumulate_some(
+        tree: &sled::Tree,
+        n: usize,
+    ) -> Vec<Result<(IVec, TestState), DbError>> {
+        let test_names = match tree.get(KEY_TESTS) {
+            Ok(Some(bytes)) => <Vec<Vec<u8>>>::decode(&mut &bytes[..]).unwrap(),
+            _ => vec![],
+        };
+
+        let tests = test_names
+            .into_iter()
+            .take(n)
             .map(|key| {
                 let query = tree.get(&key);
                 (IVec::from(key), query)

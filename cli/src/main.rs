@@ -84,7 +84,11 @@ fn main() -> Result<(), DbError> {
                     lister = lister.run();
                 }
             } else if options.staggered {
-                todo!()
+                let mut runner = monitor.into_runner_staggered()?;
+
+                while !runner.is_finished() {
+                    runner = runner.run();
+                }
             } else {
                 let mut runner = monitor.into_runner(name)?;
 

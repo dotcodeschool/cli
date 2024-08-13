@@ -14,6 +14,7 @@ use crate::{parsing::TestResult, str_res::OPTIONAL};
 pub const PATH_DB: &str = "./db";
 pub const KEY_TIME: &[u8] = b"time_last_modified";
 pub const KEY_TESTS: &[u8] = b"tests";
+pub const KEY_STAGGERED: &[u8] = b"staggered";
 const HASH_SIZE: usize = 2;
 
 #[derive(Error, Debug)]
@@ -36,20 +37,20 @@ pub enum DbError {
     DecodeError(String, String),
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum ValidationState {
     Unkown,
     Pass,
     Fail,
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum PathLink {
     Link(String),
     LinkOptional(String),
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub struct TestState {
     pub name: String,
     pub message_on_success: String,
