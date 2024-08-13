@@ -61,7 +61,7 @@ fn main() -> Result<(), DbError> {
 
     match args.command {
         Command::Test { name } => {
-            let mut runner = monitor.into_runner();
+            let mut runner = monitor.into_runner(name)?;
 
             while !runner.is_finished() {
                 runner = runner.run();

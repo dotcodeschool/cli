@@ -1,7 +1,7 @@
 use indicatif::ProgressBar;
 
 use colored::Colorize;
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::Decode;
 
 use crate::{
     db::{TestState, ValidationState},
@@ -21,6 +21,16 @@ pub struct ListerV1 {
     pub tests: Vec<String>,
     pub tree: sled::Tree,
     pub state: ListerStateV1,
+}
+
+impl ListerV1 {
+    pub fn new(
+        progress: ProgressBar,
+        tests: Vec<String>,
+        tree: sled::Tree,
+    ) -> Self {
+        Self { progress, tests, tree, state: ListerStateV1::Loaded }
+    }
 }
 
 impl StateMachine for ListerV1 {
@@ -54,19 +64,15 @@ impl StateMachine for ListerV1 {
                 }
             }
             ListerStateV1::List { index_test } => {
-                let key_str = &tests[index_test];
-                let key = key_str.encode();
-                let query = db.get(&key);
+                let query = db.get(&tests[index_test]);
 
                 match query {
                     Ok(Some(bytes)) => {
-                        let TestState { path, passed } =
-                            TestState::decode(&mut &bytes[..]).unwrap();
+                        let test = TestState::decode(&mut &bytes[..]).unwrap();
+                        let path_to = test.path_to().to_lowercase();
+                        let test_name = test.name.to_lowercase();
 
-                        let path_to = path[..(path.len() - 1)].join("/");
-                        let test_name = path.last().unwrap();
-
-                        match passed {
+                        match test.passed {
                             ValidationState::Unkown => {
                                 progress.println(format!(
                                     "• {} {}/{}",
@@ -107,30 +113,25 @@ impl StateMachine for ListerV1 {
                             }
                         }
                     }
-                    Ok(None) => Self {
-                        progress,
-                        tests,
-                        tree: db,
-                        state: ListerStateV1::Error {
+                    Ok(None) => {
+                        let state = ListerStateV1::Error {
                             reason: format!(
                                 "failed to read test, no data at key 0x{}",
-                                hex::encode(key)
-                            )
-                            .to_string(),
-                        },
-                    },
-                    Err(err) => Self {
-                        progress,
-                        tests,
-                        tree: db,
-                        state: ListerStateV1::Error {
+                                hex::encode(&tests[index_test])
+                            ),
+                        };
+                        Self { progress, tests, tree: db, state }
+                    }
+                    Err(err) => {
+                        let state = ListerStateV1::Error {
                             reason: format!(
                                 "failed to read test at key 0x{}, {}",
-                                hex::encode(key),
+                                hex::encode(&tests[index_test]),
                                 err
                             ),
-                        },
-                    },
+                        };
+                        Self { progress, tests, tree: db, state }
+                    }
                 }
             }
             ListerStateV1::Error { reason } => {

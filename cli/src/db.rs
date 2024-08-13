@@ -1,4 +1,5 @@
-use std::os::unix::fs::MetadataExt;
+use colored::Colorize;
+use std::{fmt::Display, os::unix::fs::MetadataExt};
 
 use blake2::{
     digest::{Update, VariableOutput},
@@ -7,6 +8,8 @@ use blake2::{
 use indexmap::{IndexMap, IndexSet};
 use parity_scale_codec::{Decode, Encode};
 use thiserror::Error;
+
+use crate::{parsing::TestResult, str_res::OPTIONAL};
 
 pub const PATH_DB: &str = "./db";
 pub const KEY_TIME: &[u8] = b"time_last_modified";
@@ -49,9 +52,118 @@ pub enum PathLink {
 #[derive(Encode, Decode, Debug)]
 pub struct TestState {
     pub name: String,
+    pub message_on_success: String,
+    pub message_on_fail: String,
     pub cmd: Vec<String>,
     pub path: Vec<PathLink>,
     pub passed: ValidationState,
+    pub optional: bool,
+}
+
+impl TestState {
+    pub fn run(&self) -> TestResult {
+        log::debug!("Running test: '{:?}", self.cmd);
+
+        let output = std::process::Command::new(&self.cmd[0])
+            .args(self.cmd[1..].iter())
+            .output();
+        let output = match output {
+            Ok(output) => output,
+            Err(_) => {
+                return TestResult::Fail("could not execute test".to_string());
+            }
+        };
+
+        log::debug!("Test executed successfully!");
+
+        match output.status.success() {
+            true => TestResult::Pass(String::from_utf8(output.stdout).unwrap()),
+            false => {
+                TestResult::Fail(String::from_utf8(output.stderr).unwrap())
+            }
+        }
+    }
+
+    pub fn path_to(&self) -> String {
+        let [stage_link, lesson_link, suite_link, _] = &self.path[..] else {
+            return String::default();
+        };
+
+        match (stage_link, lesson_link, suite_link) {
+            (
+                PathLink::Link(stage_name),
+                PathLink::Link(lesson_name),
+                PathLink::Link(suite_name),
+            ) => {
+                format!("{stage_name}/{lesson_name}/{suite_name}")
+            }
+            (
+                PathLink::Link(stage_name),
+                PathLink::Link(lesson_name),
+                PathLink::LinkOptional(suite_name),
+            ) => {
+                format!("{stage_name}/{lesson_name}/{suite_name}")
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Display for TestState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [stage_link, lesson_link, suite_link, test_link] = &self.path[..]
+        else {
+            return write!(f, "");
+        };
+
+        match (stage_link, lesson_link, suite_link, test_link) {
+            (
+                PathLink::Link(stage_name),
+                PathLink::Link(lesson_name),
+                PathLink::Link(suite_name),
+                PathLink::Link(test_name),
+            ) => {
+                write!(
+                    f,
+                    "\n{}\n╰─{}\n  ╰─{}\n\n   🧪 Running test {test_name}",
+                    stage_name.green(),
+                    lesson_name.green(),
+                    suite_name.green()
+                )
+            }
+            (
+                PathLink::Link(stage_name),
+                PathLink::Link(lesson_name),
+                PathLink::LinkOptional(suite_name),
+                PathLink::Link(test_name),
+            ) => {
+                write!(
+                    f,
+                    "\n{}\n╰─{}\n  ╰─{} {}\n\n   🧪 Running test {test_name}",
+                    stage_name.green(),
+                    lesson_name.green(),
+                    suite_name.green(),
+                    *OPTIONAL
+                )
+            }
+            (
+                PathLink::Link(stage_name),
+                PathLink::Link(lesson_name),
+                PathLink::Link(suite_name),
+                PathLink::LinkOptional(test_name),
+            ) => {
+                write!(
+                    f,
+                    "\n{}\n╰─{}\n  ╰─{}\n\n   🧪 Running test {test_name} {}",
+                    stage_name.green(),
+                    lesson_name.green(),
+                    suite_name.green(),
+                    *OPTIONAL
+                )
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub fn hash(words: &[&str]) -> String {
@@ -107,7 +219,6 @@ pub fn db_should_update(
     Ok(should_update)
 }
 
-// TODO: support tests with the same name but different paths
 pub fn db_update(
     tree: &sled::Tree,
     tests_new: &IndexMap<String, TestState>,
@@ -140,12 +251,11 @@ pub fn db_update(
             tests_keys_new.difference(&tests_keys_old).collect::<Vec<_>>();
 
         // Inserts tests which were not already in the course file
-        for key_str in tests_keys_unkown {
-            let key = key_str.encode();
-            let test = tests_new.get(key_str).unwrap();
+        for key in tests_keys_unkown {
+            let test = tests_new.get(key).unwrap();
 
-            tree.insert(&key, test.encode()).map_err(|err| {
-                DbError::DbInsert(hex::encode(&key), err.to_string())
+            tree.insert(key, test.encode()).map_err(|err| {
+                DbError::DbInsert(hex::encode(key), err.to_string())
             })?;
         }
 
@@ -157,11 +267,9 @@ pub fn db_update(
     // Db does not already contain tests for the current course file
     } else {
         // Inserts all new tests
-        for (key_str, test) in tests_new.iter() {
-            let key = key_str.encode();
-
-            tree.insert(&key, test.encode()).map_err(|err| {
-                DbError::DbInsert(hex::encode(&key), err.to_string())
+        for (key, test) in tests_new.iter() {
+            tree.insert(key, test.encode()).map_err(|err| {
+                DbError::DbInsert(hex::encode(key), err.to_string())
             })?;
         }
 

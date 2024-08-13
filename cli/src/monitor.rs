@@ -1,16 +1,13 @@
-use hex::decode;
 use indicatif::ProgressBar;
 
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::Decode;
+use sled::IVec;
 
 use crate::{
     db::{db_open, db_should_update, db_update, DbError, TestState, KEY_TESTS},
-    lister::{
-        v1::{ListerStateV1, ListerV1},
-        ListerVersion,
-    },
+    lister::{v1::ListerV1, ListerVersion},
     parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
     runner::{v1::RunnerV1, RunnerVersion},
     str_res::DOTCODESCHOOL,
@@ -74,78 +71,18 @@ impl Monitor {
 
         let tests = match test_name {
             Some(test_name) => {
-                let tests = tree.scan_prefix(test_name.encode()).fold_while(
-                    vec![],
-                    |mut acc, query| match query {
-                        Ok((key, bytes)) => {
-                            acc.push(
-                                TestState::decode(&mut &bytes[..]).map_err(
-                                    |err| {
-                                        DbError::DecodeError(
-                                            hex::encode(key),
-                                            err.to_string(),
-                                        )
-                                    },
-                                ),
-                            );
-                            FoldWhile::Continue(acc)
-                        }
-                        Err(_) => FoldWhile::Done(vec![]),
-                    },
-                );
-
-                tests.into_inner()
+                Self::tests_accumulate_matching(test_name, &tree)
             }
-            None => {
-                let test_names = match tree.get(KEY_TESTS) {
-                    Ok(Some(bytes)) => {
-                        <Vec<String>>::decode(&mut &bytes[..]).unwrap()
-                    }
-                    _ => vec![],
-                };
-
-                let tests = test_names
-                    .into_iter()
-                    .map(|key| (key.clone(), tree.get(key.encode())))
-                    .fold_while(vec![], |mut acc, (key, query)| match query {
-                        Ok(Some(bytes)) => {
-                            acc.push(
-                                TestState::decode(&mut &bytes[..]).map_err(
-                                    |err| {
-                                        DbError::DecodeError(
-                                            hex::encode(key),
-                                            err.to_string(),
-                                        )
-                                    },
-                                ),
-                            );
-                            FoldWhile::Continue(acc)
-                        }
-                        _ => FoldWhile::Done(vec![]),
-                    });
-
-                tests.into_inner()
-            }
+            None => Self::tests_accumulate_all(&tree),
         }
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
 
         match course {
-            JsonCourseVersion::V1(course) => {
-                let test_count = course.stages.iter().fold(0, |acc, stage| {
-                    acc + stage.lessons.iter().fold(0, |acc, lesson| {
-                        acc + match &lesson.suites {
-                            Some(suites) => suites
-                                .iter()
-                                .fold(0, |acc, suite| acc + suite.tests.len()),
-                            None => 0,
-                        }
-                    })
-                });
+            JsonCourseVersion::V1(_) => {
+                progress.set_length(tests.len() as u64);
 
-                progress.set_length(test_count as u64);
-
-                let runner = RunnerV1::new(course, progress, tree);
+                let runner = RunnerV1::new(progress, tree, tests);
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -202,19 +139,14 @@ impl Monitor {
                     .unwrap();
 
                 let tests =
-                    Vec::<String>::decode(&mut &bytes[..]).map_err(|err| {
+                    <Vec<String>>::decode(&mut &bytes[..]).map_err(|err| {
                         DbError::DecodeError(
                             hex::encode(KEY_TESTS),
                             err.to_string(),
                         )
                     })?;
 
-                Ok(ListerVersion::V1(ListerV1 {
-                    progress,
-                    tests,
-                    tree,
-                    state: ListerStateV1::Loaded,
-                }))
+                Ok(ListerVersion::V1(ListerV1::new(progress, tests, tree)))
             }
         }
     }
@@ -229,5 +161,57 @@ impl Monitor {
             course.name().to_uppercase().white().bold(),
             course.author().white().bold()
         ));
+    }
+
+    fn tests_accumulate_matching(
+        test_name: String,
+        tree: &sled::Tree,
+    ) -> Vec<Result<(IVec, TestState), DbError>> {
+        tree.scan_prefix(test_name)
+            .fold_while(vec![], |mut acc, query| match query {
+                Ok((key, bytes)) => {
+                    acc.push(match TestState::decode(&mut &bytes[..]) {
+                        Ok(test_state) => Ok((key, test_state)),
+                        Err(e) => Err(DbError::DecodeError(
+                            hex::encode(key),
+                            e.to_string(),
+                        )),
+                    });
+                    FoldWhile::Continue(acc)
+                }
+                Err(_) => FoldWhile::Done(vec![]),
+            })
+            .into_inner()
+    }
+
+    fn tests_accumulate_all(
+        tree: &sled::Tree,
+    ) -> Vec<Result<(IVec, TestState), DbError>> {
+        let test_names = match tree.get(KEY_TESTS) {
+            Ok(Some(bytes)) => <Vec<Vec<u8>>>::decode(&mut &bytes[..]).unwrap(),
+            _ => vec![],
+        };
+
+        let tests = test_names
+            .into_iter()
+            .map(|key| {
+                let query = tree.get(&key);
+                (IVec::from(key), query)
+            })
+            .fold_while(vec![], |mut acc, (key, query)| match query {
+                Ok(Some(bytes)) => {
+                    acc.push(match TestState::decode(&mut &bytes[..]) {
+                        Ok(test_state) => Ok((key, test_state)),
+                        Err(e) => Err(DbError::DecodeError(
+                            hex::encode(key),
+                            e.to_string(),
+                        )),
+                    });
+                    FoldWhile::Continue(acc)
+                }
+                _ => FoldWhile::Done(vec![]),
+            });
+
+        tests.into_inner()
     }
 }

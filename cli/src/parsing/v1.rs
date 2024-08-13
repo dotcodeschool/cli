@@ -1,13 +1,9 @@
 use indexmap::IndexMap;
-use parity_scale_codec::Encode;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{
-    db::{PathLink, TestState, ValidationState},
-    parsing::TestResult,
-};
+use crate::db::{PathLink, TestState, ValidationState};
 
-use super::{JsonCourse, JsonTest};
+use super::JsonCourse;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonTestV1 {
@@ -131,32 +127,6 @@ where
     }
 }
 
-impl JsonTest for JsonTestV1 {
-    fn run(&self) -> super::TestResult {
-        log::debug!("Running test: '{}", self.cmd);
-
-        let command: Vec<&str> = self.cmd.split_whitespace().collect();
-        let output = std::process::Command::new(command[0])
-            .args(command[1..].iter())
-            .output();
-        let output = match output {
-            Ok(output) => output,
-            Err(_) => {
-                return TestResult::Fail("could not execute test".to_string());
-            }
-        };
-
-        log::debug!("Test executed successfully!");
-
-        match output.status.success() {
-            true => TestResult::Pass(String::from_utf8(output.stdout).unwrap()),
-            false => {
-                TestResult::Fail(String::from_utf8(output.stderr).unwrap())
-            }
-        }
-    }
-}
-
 impl<'a> JsonCourse<'a> for JsonCourseV1 {
     fn name(&'a self) -> &'a str {
         &self.name
@@ -167,22 +137,21 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
     }
 
     // TODO: remove copy
-    fn list_tests(&self) -> IndexMap<Vec<u8>, TestState> {
+    fn list_tests(&self) -> IndexMap<String, TestState> {
         let Self { stages, name, .. } = self;
 
         stages.iter().fold(IndexMap::new(), |acc, stage| {
             stage.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
                 Some(suites) => suites.iter().fold(acc, |acc, suite| {
                     suite.tests.iter().fold(acc, |mut acc, test| {
-                        let key = format!(
-                            "{}{}{}{}{}",
-                            test.name,
-                            suite.name,
-                            lesson.name,
-                            stage.name,
-                            name
-                        )
-                        .encode();
+                        let key = [
+                            test.name.to_lowercase(),
+                            suite.name.to_lowercase(),
+                            lesson.name.to_lowercase(),
+                            stage.name.to_lowercase(),
+                            name.to_lowercase(),
+                        ]
+                        .concat();
 
                         let cmd = test
                             .cmd
@@ -198,14 +167,21 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
                             } else {
                                 PathLink::Link(suite.name.clone())
                             },
-                            PathLink::Link(test.name.clone()),
+                            if !suite.optional && test.optional {
+                                PathLink::LinkOptional(test.name.clone())
+                            } else {
+                                PathLink::Link(test.name.clone())
+                            },
                         ];
 
                         let test = TestState {
                             name: test.name.clone(),
+                            message_on_success: test.message_on_success.clone(),
+                            message_on_fail: test.message_on_fail.clone(),
                             cmd,
                             path,
                             passed: ValidationState::Unkown,
+                            optional: suite.optional || test.optional,
                         };
 
                         acc.insert(key, test);
