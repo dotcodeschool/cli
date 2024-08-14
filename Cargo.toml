@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "cli",
-    "course"
+    "course",
 ]
 resolver = "2"
 
@@ -50,3 +50,8 @@ sled = "0.34.7"
 parity-scale-codec = { version = "3.6.12", features = ["derive"] }
 blake2 = "0.10.6"
 hex = "0.4.3"
+
+course = { path = "./course" }
+
+
+
