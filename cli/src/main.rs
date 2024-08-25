@@ -1,8 +1,8 @@
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
-use db::{DbError, PATH_DB};
+use db::PATH_DB;
 use env_logger::Builder;
-use monitor::{Monitor, StateMachine};
+use monitor::{Monitor, MonitorError, StateMachine};
 use std::io::Write;
 
 mod db;
@@ -50,7 +50,7 @@ struct TestOptions {
     staggered: bool,
 }
 
-fn main() -> Result<(), DbError> {
+fn main() -> Result<(), MonitorError> {
     let args = Cli::parse();
 
     Builder::from_default_env()

@@ -39,8 +39,8 @@ pub enum TestResult {
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Default)]
 pub struct CourseMetaData {
-    logstream_url: String,
-    tester_url: String,
+    pub logstream_url: String,
+    pub tester_url: String,
 }
 
 pub trait JsonCourse<'a> {

@@ -1,11 +1,11 @@
-use std::io::stderr;
-
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::db::{PathLink, TestState, ValidationState};
 
-use super::{CourseMetaData, JsonCourse, MetadataError, ParsingError};
+use super::{CourseMetaData, JsonCourse, MetadataError};
+
+pub mod redis;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonTestV1 {

@@ -1,14 +1,15 @@
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
+use redis::Commands;
 use sled::IVec;
 
 use crate::{
     db::{TestState, ValidationState},
     monitor::StateMachine,
-    parsing::TestResult,
+    parsing::{v1::redis::RedisTestResultV1, TestResult},
 };
 
-use super::{format_bar, format_output, format_spinner, submodule_name};
+use super::{format_output, format_spinner};
 
 use colored::Colorize;
 
@@ -89,7 +90,9 @@ pub const TEST_DIR: &str = "./course";
 pub struct RunnerV1 {
     progress: ProgressBar,
     tree: sled::Tree,
+    connection: redis::Connection,
     tests: Vec<(IVec, TestState)>,
+    redis_results: Vec<(String, String)>,
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
@@ -99,10 +102,10 @@ pub struct RunnerV1 {
 #[derive(Eq, PartialEq, Clone)]
 pub enum RunnerStateV1 {
     Loaded,
-    Update,
     NewTest { index_test: usize },
     Fail(String),
     Pass,
+    Redis,
     Finish,
 }
 
@@ -110,11 +113,14 @@ impl RunnerV1 {
     pub fn new(
         progress: ProgressBar,
         tree: sled::Tree,
+        connection: redis::Connection,
         tests: Vec<(IVec, TestState)>,
     ) -> Self {
         Self {
             progress,
             tree,
+            connection,
+            redis_results: Vec::with_capacity(tests.len() + 1),
             tests,
             success: 0,
             state: RunnerStateV1::Loaded,
@@ -126,6 +132,7 @@ impl RunnerV1 {
     pub fn new_with_hooks<F1, F2>(
         progress: ProgressBar,
         tree: sled::Tree,
+        connection: redis::Connection,
         tests: Vec<(IVec, TestState)>,
         on_pass: F1,
         on_fail: F2,
@@ -137,6 +144,8 @@ impl RunnerV1 {
         Self {
             progress,
             tree,
+            connection,
+            redis_results: Vec::with_capacity(tests.len() + 1),
             tests,
             success: 0,
             state: RunnerStateV1::Loaded,
@@ -148,8 +157,17 @@ impl RunnerV1 {
 
 impl StateMachine for RunnerV1 {
     fn run(self) -> Self {
-        let Self { progress, tree, tests, success, state, on_pass, on_fail } =
-            self;
+        let Self {
+            progress,
+            tree,
+            mut connection,
+            tests,
+            mut redis_results,
+            success,
+            state,
+            on_pass,
+            on_fail,
+        } = self;
 
         match state {
             // Genesis state, displays information about the course and the
@@ -159,120 +177,16 @@ impl StateMachine for RunnerV1 {
                     "\n📒 You have {} exercises left",
                     tests.len().to_string().bold()
                 ));
-                Self {
-                    progress,
-                    tree,
-                    tests,
-                    success,
-                    state: RunnerStateV1::Update,
-                    on_pass,
-                    on_fail,
-                }
-            }
-            // Initializes all submodules and checks for tests updates. This
-            // happens if the `TEST_DIR` submodule is out of date,
-            // in which case it will be pulled. A new commit is then
-            // created which contains the submodule update.
-            RunnerStateV1::Update => {
+
                 format_spinner(&progress);
-
-                let output = std::process::Command::new("git")
-                    .arg("submodule")
-                    .arg("status")
-                    .output();
-
-                // Auto-initializes submodules
-                if let Ok(output) = output {
-                    let stdout = String::from_utf8(output.stdout).unwrap();
-                    let lines = stdout.split("\n");
-
-                    for line in lines {
-                        let submodule = submodule_name(&stdout);
-
-                        if line.starts_with("-") {
-                            progress.set_message(
-                                "Downloading course"
-                                    .italic()
-                                    .dimmed()
-                                    .to_string(),
-                            );
-
-                            let _ = std::process::Command::new("git")
-                                .arg("submodule")
-                                .arg("update")
-                                .arg("--init")
-                                .arg(&submodule)
-                                .output();
-                        }
-                    }
-                } else {
-                    progress.println(
-                        "\n🔄 Failed to check for updates"
-                            .white()
-                            .dimmed()
-                            .italic()
-                            .to_string(),
-                    );
-                }
-
-                // Checks for updates
-                progress.set_message(
-                    "Checking for updates".italic().dimmed().to_string(),
-                );
-
-                let _ = std::process::Command::new("git")
-                    .arg("fetch")
-                    .current_dir(TEST_DIR)
-                    .output();
-                let output = std::process::Command::new("git")
-                    .arg("status")
-                    .current_dir(TEST_DIR)
-                    .output();
-
-                // Applies updates
-                if let Ok(output) = output {
-                    let stdout = String::from_utf8(output.stdout).unwrap();
-
-                    if stdout.contains("Your branch is behind") {
-                        progress.set_message(
-                            "Updating course".italic().dimmed().to_string(),
-                        );
-
-                        let _ = std::process::Command::new("git")
-                            .arg("pull")
-                            .current_dir(TEST_DIR)
-                            .output();
-
-                        let _ = std::process::Command::new("git")
-                            .arg("add")
-                            .arg(TEST_DIR)
-                            .output();
-
-                        let _ = std::process::Command::new("git")
-                            .arg("commit")
-                            .arg("-m")
-                            .arg("🧪 Updated course")
-                            .output();
-
-                        progress.println("\n📝 Updated course");
-                    }
-                } else {
-                    progress.println(
-                        "\n🔄 Failed to check for updates"
-                            .white()
-                            .dimmed()
-                            .italic()
-                            .to_string(),
-                    );
-                }
-
-                format_bar(&progress);
 
                 if tests.is_empty() {
                     Self {
                         progress,
                         tree,
+                        connection,
                         tests,
+                        redis_results,
                         success,
                         state: RunnerStateV1::Fail(
                             "🚫 no tests found".to_string(),
@@ -284,7 +198,9 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        connection,
                         tests,
+                        redis_results,
                         success,
                         state: RunnerStateV1::NewTest { index_test: 0 },
                         on_pass,
@@ -315,7 +231,9 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                connection,
                                 tests,
+                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -323,13 +241,23 @@ impl StateMachine for RunnerV1 {
                             };
                         }
 
-                        progress.println(format_output(
+                        let output = format_output(
                             stdout,
                             &format!(
                                 "✅ {}",
                                 tests[index_test].1.message_on_success
                             ),
+                        );
+
+                        redis_results.push((
+                            tests[index_test].1.name.clone(),
+                            serde_json::to_string(&RedisTestResultV1::pass(
+                                &output,
+                            ))
+                            .unwrap(),
                         ));
+
+                        progress.println(output);
                     }
                     TestResult::Fail(stderr) => {
                         let query = tree
@@ -344,7 +272,9 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                connection,
                                 tests,
+                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -352,18 +282,26 @@ impl StateMachine for RunnerV1 {
                             };
                         }
 
-                        progress.println(
-                            format_output(
-                                stderr,
-                                &format!(
-                                    "❌ {}",
-                                    tests[index_test].1.message_on_fail
-                                ),
-                            )
-                            .red()
-                            .dimmed()
-                            .to_string(),
-                        );
+                        let output = format_output(
+                            stderr,
+                            &format!(
+                                "❌ {}",
+                                tests[index_test].1.message_on_fail
+                            ),
+                        )
+                        .red()
+                        .dimmed()
+                        .to_string();
+
+                        redis_results.push((
+                            tests[index_test].1.name.clone(),
+                            serde_json::to_string(&RedisTestResultV1::fail(
+                                &output,
+                            ))
+                            .unwrap(),
+                        ));
+
+                        progress.println(output);
 
                         if !tests[index_test].1.optional {
                             let state = RunnerStateV1::Fail(format!(
@@ -374,7 +312,9 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                connection,
                                 tests,
+                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -389,7 +329,9 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        connection,
                         tests,
+                        redis_results,
                         success: success + 1,
                         state: RunnerStateV1::NewTest {
                             index_test: index_test + 1,
@@ -401,7 +343,9 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        connection,
                         tests,
+                        redis_results,
                         success: success + 1,
                         state: RunnerStateV1::Pass,
                         on_pass,
@@ -417,14 +361,18 @@ impl StateMachine for RunnerV1 {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
+                redis_results.push(("passed".to_string(), "false".to_string()));
+
                 on_fail();
 
                 Self {
                     progress,
                     tree,
+                    connection,
                     tests,
+                    redis_results,
                     success,
-                    state: RunnerStateV1::Finish,
+                    state: RunnerStateV1::Redis,
                     on_pass,
                     on_fail,
                 }
@@ -446,12 +394,65 @@ impl StateMachine for RunnerV1 {
                     score.green().bold()
                 ));
 
+                redis_results.push(("passed".to_string(), "true".to_string()));
+
                 on_pass();
 
                 Self {
                     progress,
                     tree,
+                    connection,
                     tests,
+                    redis_results,
+                    success,
+                    state: RunnerStateV1::Redis,
+                    on_pass,
+                    on_fail,
+                }
+            }
+            RunnerStateV1::Redis => {
+                format_spinner(&progress);
+
+                progress.set_message(
+                    "⏳ Streaming results back to DotCodeSchool"
+                        .white()
+                        .dimmed()
+                        .italic()
+                        .to_string(),
+                );
+
+                match connection.xadd::<&str, &str, String, String, String>(
+                    "todo",
+                    "*",
+                    &redis_results,
+                ) {
+                    Ok(_) => {
+                        progress.finish_and_clear();
+                        progress.println(
+                            "Results streamed back successfully"
+                                .white()
+                                .dimmed()
+                                .italic()
+                                .to_string(),
+                        );
+                    }
+                    Err(_) => {
+                        progress.finish_and_clear();
+                        progress.println(
+                            "❌ Failed to update DotCodeSchool"
+                                .red()
+                                .bold()
+                                .to_string(),
+                        );
+                    }
+                }
+
+                Self {
+                    progress,
+                    tree,
+                    connection,
+                    tests,
+                    redis_results,
                     success,
                     state: RunnerStateV1::Finish,
                     on_pass,
@@ -462,7 +463,9 @@ impl StateMachine for RunnerV1 {
             RunnerStateV1::Finish => Self {
                 progress,
                 tree,
+                connection,
                 tests,
+                redis_results,
                 success,
                 state: RunnerStateV1::Finish,
                 on_pass,

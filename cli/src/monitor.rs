@@ -3,15 +3,20 @@ use indicatif::ProgressBar;
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
 use parity_scale_codec::{Decode, Encode};
+use redis::RedisError;
 use sled::IVec;
+use thiserror::Error;
 
 use crate::{
     db::{
-        db_open, db_should_update, db_update, DbError, TestState,
+        db_open, db_should_update, db_update, DbError, TestState, KEY_METADATA,
         KEY_STAGGERED, KEY_TESTS,
     },
     lister::{v1::ListerV1, ListerVersion},
-    parsing::{load_course, JsonCourse, JsonCourseVersion, ParsingError},
+    parsing::{
+        load_course, CourseMetaData, JsonCourse, JsonCourseVersion,
+        ParsingError,
+    },
     runner::{v1::RunnerV1, RunnerVersion},
     str_res::{DOTCODESCHOOL, STAGGERED},
     validator::{
@@ -22,8 +27,15 @@ use crate::{
 
 pub trait StateMachine {
     fn run(self) -> Self;
-
     fn is_finished(&self) -> bool;
+}
+
+#[derive(Error, Debug)]
+pub enum MonitorError {
+    #[error("{0}")]
+    DbError(#[from] DbError),
+    #[error("{0}")]
+    RedisError(#[from] RedisError),
 }
 
 pub struct Monitor {
@@ -68,7 +80,7 @@ impl Monitor {
     pub fn into_runner(
         self,
         test_name: Option<String>,
-    ) -> Result<RunnerVersion, DbError> {
+    ) -> Result<RunnerVersion, MonitorError> {
         self.greet();
 
         let Self { course, progress, tree, .. } = self;
@@ -82,18 +94,40 @@ impl Monitor {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
 
+        let metadata = match tree.get(KEY_METADATA) {
+            Ok(Some(bytes)) => CourseMetaData::decode(&mut &bytes[..])
+                .map_err(|e| {
+                    DbError::DecodeError(
+                        hex::encode(KEY_METADATA),
+                        e.to_string(),
+                    )
+                })?,
+            _ => {
+                return Err(DbError::DbGet(
+                    hex::encode(KEY_METADATA),
+                    String::default(),
+                )
+                .into());
+            }
+        };
+
+        log::debug!("initiating redis client at '{}'", metadata.logstream_url);
+
+        let client = redis::Client::open(metadata.logstream_url)?;
+        let connection = client.get_connection()?;
+
         match course {
             JsonCourseVersion::V1(_) => {
                 progress.set_length(tests.len() as u64);
 
-                let runner = RunnerV1::new(progress, tree, tests);
+                let runner = RunnerV1::new(progress, tree, connection, tests);
 
                 Ok(RunnerVersion::V1(runner))
             }
         }
     }
 
-    pub fn into_runner_staggered(self) -> Result<RunnerVersion, DbError> {
+    pub fn into_runner_staggered(self) -> Result<RunnerVersion, MonitorError> {
         self.greet();
 
         let Self { course, progress, tree, .. } = self;
@@ -118,6 +152,28 @@ impl Monitor {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
 
+        let metadata = match tree.get(KEY_METADATA) {
+            Ok(Some(bytes)) => CourseMetaData::decode(&mut &bytes[..])
+                .map_err(|e| {
+                    DbError::DecodeError(
+                        hex::encode(KEY_METADATA),
+                        e.to_string(),
+                    )
+                })?,
+            _ => {
+                return Err(DbError::DbGet(
+                    hex::encode(KEY_METADATA),
+                    String::default(),
+                )
+                .into());
+            }
+        };
+
+        log::debug!("initiating redis client at '{}'", metadata.logstream_url);
+
+        let client = redis::Client::open(metadata.logstream_url)?;
+        let connection = client.get_connection()?;
+
         match course {
             JsonCourseVersion::V1(course) => {
                 let test_count = course.stages.iter().fold(0, |acc, stage| {
@@ -136,6 +192,7 @@ impl Monitor {
                 let runner = RunnerV1::new_with_hooks(
                     progress,
                     tree.clone(),
+                    connection,
                     tests,
                     move || {
                         let staggered = staggered + 1;
