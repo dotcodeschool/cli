@@ -1,6 +1,10 @@
 {
   "version": "1.0",
   "name": "Course name",
+  "repository": {
+    "name": "c03cd646f5dd167f",
+    "commit_sha": "latest3"
+  },
   "title": "Course title",
   "slug": "0x740d",
   "description": "description.md",

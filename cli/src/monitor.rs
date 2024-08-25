@@ -42,7 +42,8 @@ impl Monitor {
                 let (db, tree) = db_open(path_db, path_course)?;
 
                 if db_should_update(&tree, path_course)? {
-                    db_update(&tree, &tests_new)?;
+                    let metadata = course.fetch_metatdata()?;
+                    db_update(&tree, &tests_new, metadata)?;
                 }
 
                 Ok(Self { course, progress: ProgressBar::new(0), db, tree })

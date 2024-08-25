@@ -5,6 +5,8 @@
 //! execution is the responsibility of the test [runner].
 
 use indexmap::IndexMap;
+use parity_scale_codec::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -18,8 +20,16 @@ pub const V_1_0: &str = "1.0";
 pub enum ParsingError {
     #[error("failed to open course file at {0}")]
     FileOpenError(String),
-    #[error("")]
+    #[error("invalid course format: {0}")]
     CourseFmtError(String),
+}
+
+#[derive(Error, Debug)]
+pub enum MetadataError {
+    #[error("failed to retrieve course metadata: {0}")]
+    MetadataRetrievalError(String),
+    #[error("Invalid course metadata format: {0}")]
+    MetadataFmtError(String),
 }
 
 pub enum TestResult {
@@ -27,10 +37,17 @@ pub enum TestResult {
     Fail(String),
 }
 
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Default)]
+pub struct CourseMetaData {
+    logstream_url: String,
+    tester_url: String,
+}
+
 pub trait JsonCourse<'a> {
     fn name(&'a self) -> &'a str;
     fn author(&'a self) -> &'a str;
     fn list_tests(&self) -> IndexMap<String, TestState>;
+    fn fetch_metatdata(&self) -> Result<CourseMetaData, MetadataError>;
 }
 
 pub enum JsonCourseVersion {
@@ -53,6 +70,12 @@ impl<'a> JsonCourse<'a> for JsonCourseVersion {
     fn list_tests(&self) -> IndexMap<String, TestState> {
         match self {
             JsonCourseVersion::V1(course) => course.list_tests(),
+        }
+    }
+
+    fn fetch_metatdata(&self) -> Result<CourseMetaData, MetadataError> {
+        match self {
+            JsonCourseVersion::V1(course) => course.fetch_metatdata(),
         }
     }
 }

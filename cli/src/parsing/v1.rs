@@ -1,9 +1,11 @@
+use std::io::stderr;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::db::{PathLink, TestState, ValidationState};
 
-use super::JsonCourse;
+use super::{CourseMetaData, JsonCourse, MetadataError, ParsingError};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonTestV1 {
@@ -61,6 +63,12 @@ pub struct JsonStageV1 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
+pub struct JsonRepoV1 {
+    name: String,
+    commit_sha: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonAuthorV1 {
     pub name: String,
     pub url: String,
@@ -96,6 +104,7 @@ pub enum JsonLanguageV1 {
 pub struct JsonCourseV1 {
     pub version: String,
     pub name: String,
+    pub repository: JsonRepoV1,
     pub title: String,
     pub slug: String,
     pub description: String,
@@ -191,5 +200,55 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
                 None => acc,
             })
         })
+    }
+
+    fn fetch_metatdata(&self) -> Result<CourseMetaData, MetadataError> {
+        let Self { repository: JsonRepoV1 { name, commit_sha }, .. } = self;
+
+        let request = format!(
+            concat!(
+                "{{",
+                "\"repo_name\":",
+                "\"{}\",",
+                "\"commit_sha\":",
+                "\"{}\"",
+                "}}"
+            ),
+            name, commit_sha
+        );
+
+        log::debug!("fetching metadata: {request}");
+
+        let output = std::process::Command::new("curl")
+            .arg("-fsSL")
+            .arg("-H")
+            .arg("Content-Type: application/json")
+            .arg("-d")
+            .arg(request)
+            .arg("https://backend.dotcodeschool.com/api/v0/create-submission")
+            .output()
+            .map(|output| (output.status.success(), output));
+
+        match output {
+            Ok((true, output)) => {
+                log::debug!("extracting course metadata from JSON");
+
+                let metadata =
+                    serde_json::from_slice::<CourseMetaData>(&output.stdout)
+                        .map_err(|e| {
+                            MetadataError::MetadataFmtError(e.to_string())
+                        })?;
+
+                Ok(metadata)
+            }
+            Ok((false, output)) => {
+                let stderr = String::from_utf8(output.stderr).unwrap();
+
+                log::debug!("course metadata retrieval failed: {stderr}");
+
+                Err(MetadataError::MetadataRetrievalError(stderr))
+            }
+            Err(e) => Err(MetadataError::MetadataRetrievalError(e.to_string())),
+        }
     }
 }

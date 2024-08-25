@@ -9,12 +9,16 @@ use indexmap::{IndexMap, IndexSet};
 use parity_scale_codec::{Decode, Encode};
 use thiserror::Error;
 
-use crate::{parsing::TestResult, str_res::OPTIONAL};
+use crate::{
+    parsing::{CourseMetaData, MetadataError, TestResult},
+    str_res::OPTIONAL,
+};
 
 pub const PATH_DB: &str = "./db";
 pub const KEY_TIME: &[u8] = b"time_last_modified";
 pub const KEY_TESTS: &[u8] = b"tests";
 pub const KEY_STAGGERED: &[u8] = b"staggered";
+pub const KEY_METADATA: &[u8] = b"metadata";
 const HASH_SIZE: usize = 2;
 
 #[derive(Error, Debug)]
@@ -35,6 +39,8 @@ pub enum DbError {
     DbRemove(String, String),
     #[error("failed to decode data stored at key '{0}': {1}")]
     DecodeError(String, String),
+    #[error("failed to retrieve course metadata")]
+    MetadataError(#[from] MetadataError),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -223,7 +229,12 @@ pub fn db_should_update(
 pub fn db_update(
     tree: &sled::Tree,
     tests_new: &IndexMap<String, TestState>,
+    metadata: CourseMetaData,
 ) -> Result<(), DbError> {
+    tree.insert(KEY_METADATA, CourseMetaData::encode(&metadata)).map_err(
+        |err| DbError::DbInsert(hex::encode(KEY_METADATA), err.to_string()),
+    )?;
+
     let tests_old = tree
         .get(KEY_TESTS)
         .map_err(|err| DbError::DbGet(hex::encode(KEY_TESTS), err.to_string()))?
