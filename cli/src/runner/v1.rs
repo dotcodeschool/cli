@@ -1,7 +1,9 @@
+use std::net::TcpStream;
+
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
-use redis::Commands;
 use sled::IVec;
+use tungstenite::{stream::MaybeTlsStream, WebSocket};
 
 use crate::{
     db::{TestState, ValidationState},
@@ -90,7 +92,7 @@ pub const TEST_DIR: &str = "./course";
 pub struct RunnerV1 {
     progress: ProgressBar,
     tree: sled::Tree,
-    connection: redis::Connection,
+    connection: WebSocket<MaybeTlsStream<TcpStream>>,
     tests: Vec<(IVec, TestState)>,
     redis_results: Vec<(String, String)>,
     success: u32,
@@ -113,7 +115,7 @@ impl RunnerV1 {
     pub fn new(
         progress: ProgressBar,
         tree: sled::Tree,
-        connection: redis::Connection,
+        connection: WebSocket<MaybeTlsStream<TcpStream>>,
         tests: Vec<(IVec, TestState)>,
     ) -> Self {
         Self {
@@ -132,7 +134,7 @@ impl RunnerV1 {
     pub fn new_with_hooks<F1, F2>(
         progress: ProgressBar,
         tree: sled::Tree,
-        connection: redis::Connection,
+        connection: WebSocket<MaybeTlsStream<TcpStream>>,
         tests: Vec<(IVec, TestState)>,
         on_pass: F1,
         on_fail: F2,
@@ -421,31 +423,31 @@ impl StateMachine for RunnerV1 {
                         .to_string(),
                 );
 
-                match connection.xadd::<&str, &str, String, String, String>(
-                    "todo",
-                    "*",
-                    &redis_results,
-                ) {
-                    Ok(_) => {
-                        progress.finish_and_clear();
-                        progress.println(
-                            "Results streamed back successfully"
-                                .white()
-                                .dimmed()
-                                .italic()
-                                .to_string(),
-                        );
-                    }
-                    Err(_) => {
-                        progress.finish_and_clear();
-                        progress.println(
-                            "❌ Failed to update DotCodeSchool"
-                                .red()
-                                .bold()
-                                .to_string(),
-                        );
-                    }
-                }
+                // match connection.xadd::<&str, &str, String, String, String>(
+                //     "todo",
+                //     "*",
+                //     &redis_results,
+                // ) {
+                //     Ok(_) => {
+                //         progress.finish_and_clear();
+                //         progress.println(
+                //             "Results streamed back successfully"
+                //                 .white()
+                //                 .dimmed()
+                //                 .italic()
+                //                 .to_string(),
+                //         );
+                //     }
+                //     Err(_) => {
+                //         progress.finish_and_clear();
+                //         progress.println(
+                //             "❌ Failed to update DotCodeSchool"
+                //                 .red()
+                //                 .bold()
+                //                 .to_string(),
+                //         );
+                //     }
+                // }
 
                 Self {
                     progress,

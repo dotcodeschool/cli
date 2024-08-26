@@ -1,11 +1,13 @@
+use std::{env::args, net::TcpStream};
+
 use indicatif::ProgressBar;
 
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
-use parity_scale_codec::{Decode, Encode};
-use redis::RedisError;
+use parity_scale_codec::{Decode, Encode, Output};
 use sled::IVec;
 use thiserror::Error;
+use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
     db::{
@@ -35,7 +37,9 @@ pub enum MonitorError {
     #[error("{0}")]
     DbError(#[from] DbError),
     #[error("{0}")]
-    RedisError(#[from] RedisError),
+    WSError(#[from] tungstenite::Error),
+    #[error("{0}")]
+    IOError(#[from] std::io::Error),
 }
 
 pub struct Monitor {
@@ -113,14 +117,13 @@ impl Monitor {
 
         log::debug!("initiating redis client at '{}'", metadata.logstream_url);
 
-        let client = redis::Client::open(metadata.logstream_url)?;
-        let connection = client.get_connection()?;
+        let client = Self::init_ws_stream(course.name())?;
 
         match course {
             JsonCourseVersion::V1(_) => {
                 progress.set_length(tests.len() as u64);
 
-                let runner = RunnerV1::new(progress, tree, connection, tests);
+                let runner = RunnerV1::new(progress, tree, client, tests);
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -171,8 +174,7 @@ impl Monitor {
 
         log::debug!("initiating redis client at '{}'", metadata.logstream_url);
 
-        let client = redis::Client::open(metadata.logstream_url)?;
-        let connection = client.get_connection()?;
+        let client = Self::init_ws_stream(course.name())?;
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -192,7 +194,7 @@ impl Monitor {
                 let runner = RunnerV1::new_with_hooks(
                     progress,
                     tree.clone(),
-                    connection,
+                    client,
                     tests,
                     move || {
                         let staggered = staggered + 1;
@@ -363,5 +365,39 @@ impl Monitor {
             });
 
         tests.into_inner()
+    }
+
+    fn init_ws_stream(
+        course_name: &str,
+    ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
+        let output = std::process::Command::new("git")
+            .arg("rev-list")
+            .arg("HEAD")
+            .stdout(std::process::Stdio::piped())
+            .spawn()?;
+
+        let output = std::process::Command::new("tail")
+            .arg("-n")
+            .arg("1")
+            .stdin(std::process::Stdio::from(output.stdout.unwrap()))
+            .output()?;
+
+        let hash = String::from_utf8(output.stdout).unwrap();
+        let stream_id = [course_name, &hash].concat();
+
+        let (mut client, _) = tungstenite::client::connect("SECRET")?;
+        client.send(Message::Text(format!(
+            concat!(
+                "{{",
+                "\"event_type\":",
+                "\"init\",",
+                "\"stream_id\":",
+                "\"{}\"",
+                "}}"
+            ),
+            stream_id
+        )))?;
+
+        Ok(client)
     }
 }
