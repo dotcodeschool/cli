@@ -1,5 +1,4 @@
 use colored::Colorize;
-use derive_more::Constructor;
 use indicatif::ProgressBar;
 
 use crate::{db::hash, monitor::StateMachine, parsing::v1::JsonCourseV1};
@@ -33,11 +32,21 @@ pub enum ValidatorStateV1 {
     Finish,
 }
 
-#[derive(Constructor, Debug)]
+#[derive(Debug)]
 pub struct ValidatorV1 {
     progress: ProgressBar,
     state: ValidatorStateV1,
     course: JsonCourseV1,
+}
+
+impl ValidatorV1 {
+    pub fn new(
+        progress: ProgressBar,
+        state: ValidatorStateV1,
+        course: JsonCourseV1,
+    ) -> Self {
+        Self { progress, state, course }
+    }
 }
 
 impl StateMachine for ValidatorV1 {

@@ -1,7 +1,7 @@
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use db::PATH_DB;
-use env_logger::{Builder, Env, Target};
+use env_logger::{Builder, Target};
 use monitor::{Monitor, MonitorError, StateMachine};
 use std::io::Write;
 

@@ -61,7 +61,7 @@
                 {
                   "name": "Foo",
                   "slug": "0x56e3",
-                  "optional": false,
+                  "optional": true,
                   "cmd": "cargo test -p course foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
@@ -84,7 +84,7 @@
                 {
                   "name": "Foo",
                   "slug": "0x7b65",
-                  "optional": false,
+                  "optional": true,
                   "cmd": "cargo test -p course foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"

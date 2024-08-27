@@ -24,7 +24,6 @@ strip = "symbols"    # Removes debug info and symbold from final binary
 # utilities
 itertools = "0.13.0"
 lazy_static = "1.5.0"
-derive_more = "0.99.18"
 indexmap = "2.3.0"
 
 # logging
@@ -41,7 +40,6 @@ clap = { version = "4.5.13", features = ["derive", "cargo"] }
 
 # error handling
 thiserror = "1.0.63"
-regex = "1.10.6"
 
 # CLI
 indicatif = "0.17.8"

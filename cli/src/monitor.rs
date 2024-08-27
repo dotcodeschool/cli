@@ -117,13 +117,30 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::init_ws_stream(course.name())?;
+        let stream_id = Self::get_stream_id(course.name())?;
+        let stream_id_1 = stream_id.clone();
+        let target = format!("./{stream_id}");
+        let client = Self::ws_stream_init(&stream_id)?;
+
+        Self::tester_repo_init(&metadata.tester_url, &stream_id)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
                 progress.set_length(tests.len() as u64);
 
-                let runner = RunnerV1::new(progress, tree, client, tests);
+                let runner = RunnerV1::new_with_hooks(
+                    progress,
+                    target,
+                    tree,
+                    client,
+                    tests,
+                    move || {
+                        let _ = Self::tester_repo_destroy(&stream_id);
+                    },
+                    move || {
+                        let _ = Self::tester_repo_destroy(&stream_id_1);
+                    },
+                );
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -174,7 +191,12 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::init_ws_stream(course.name())?;
+        let stream_id = Self::get_stream_id(course.name())?;
+        let stream_id_1 = stream_id.clone();
+        let target = format!("./{stream_id}");
+        let client = Self::ws_stream_init(&stream_id)?;
+
+        Self::tester_repo_init(&metadata.tester_url, &stream_id)?;
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -193,14 +215,18 @@ impl Monitor {
 
                 let runner = RunnerV1::new_with_hooks(
                     progress,
+                    target,
                     tree.clone(),
                     client,
                     tests,
                     move || {
                         let staggered = staggered + 1;
-                        tree.insert(KEY_STAGGERED, staggered.encode()).unwrap();
+                        let _ = tree.insert(KEY_STAGGERED, staggered.encode());
+                        let _ = Self::tester_repo_destroy(&stream_id);
                     },
-                    || {},
+                    move || {
+                        let _ = Self::tester_repo_destroy(&stream_id_1);
+                    },
                 );
 
                 Ok(RunnerVersion::V1(runner))
@@ -367,9 +393,7 @@ impl Monitor {
         tests.into_inner()
     }
 
-    fn init_ws_stream(
-        course_name: &str,
-    ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
+    fn get_stream_id(course_name: &str) -> Result<String, MonitorError> {
         let output = std::process::Command::new("git")
             .arg("rev-list")
             .arg("HEAD")
@@ -385,9 +409,16 @@ impl Monitor {
         let hash = String::from_utf8(output.stdout).unwrap();
         let stream_id = [&hash, course_name].concat();
 
+        Ok(stream_id)
+    }
+
+    fn ws_stream_init(
+        stream_id: &str,
+    ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
         // TODO: use https://docs.rs/zeroize/latest/zeroize/ to handle ws address
         // + should be received from initial curl response
-        let (mut client, _) = tungstenite::client::connect("SECRET")?;
+        let (mut client, _) =
+            tungstenite::client::connect("ws://3.90.105.11:8080")?;
         client.send(Message::Text(format!(
             concat!(
                 "{{",
@@ -401,5 +432,25 @@ impl Monitor {
         )))?;
 
         Ok(client)
+    }
+
+    fn tester_repo_init(
+        repo_url: &str,
+        stream_id: &str,
+    ) -> Result<(), MonitorError> {
+        std::process::Command::new("git")
+            .arg("clone")
+            .arg(repo_url)
+            .arg(stream_id)
+            .output()?;
+
+        Ok(())
+    }
+
+    fn tester_repo_destroy(stream_id: &str) -> Result<(), MonitorError> {
+        let path = format!("./{stream_id}");
+        std::fs::remove_dir_all(path)?;
+
+        Ok(())
     }
 }

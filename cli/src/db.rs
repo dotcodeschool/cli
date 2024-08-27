@@ -69,11 +69,12 @@ pub struct TestState {
 }
 
 impl TestState {
-    pub fn run(&self) -> TestResult {
+    pub fn run(&self, target: &str) -> TestResult {
         log::debug!("Running test: '{:?}", self.cmd);
 
         let output = std::process::Command::new(&self.cmd[0])
             .args(self.cmd[1..].iter())
+            .current_dir(target)
             .output();
         let output = match output {
             Ok(output) => output,

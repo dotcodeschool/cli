@@ -14,11 +14,9 @@ use crate::{
     },
 };
 
-use super::{format_output, format_spinner};
+use super::{format_bar, format_output, format_spinner};
 
 use colored::Colorize;
-
-pub const TEST_DIR: &str = "./course";
 
 /// Runs all the tests specified in a `tests.json` file.
 ///
@@ -94,6 +92,7 @@ pub const TEST_DIR: &str = "./course";
 /// * `course`: deserialized course information.
 pub struct RunnerV1 {
     progress: ProgressBar,
+    target: String,
     tree: sled::Tree,
     client: WebSocket<MaybeTlsStream<TcpStream>>,
     tests: Vec<(IVec, TestState)>,
@@ -115,14 +114,17 @@ pub enum RunnerStateV1 {
 }
 
 impl RunnerV1 {
+    #[allow(dead_code)]
     pub fn new(
         progress: ProgressBar,
+        target: String,
         tree: sled::Tree,
         connection: WebSocket<MaybeTlsStream<TcpStream>>,
         tests: Vec<(IVec, TestState)>,
     ) -> Self {
         Self {
             progress,
+            target,
             tree,
             client: connection,
             redis_results: RedisCourseResultV1::new(tests.len()),
@@ -136,6 +138,7 @@ impl RunnerV1 {
 
     pub fn new_with_hooks<F1, F2>(
         progress: ProgressBar,
+        target: String,
         tree: sled::Tree,
         connection: WebSocket<MaybeTlsStream<TcpStream>>,
         tests: Vec<(IVec, TestState)>,
@@ -148,6 +151,7 @@ impl RunnerV1 {
     {
         Self {
             progress,
+            target,
             tree,
             client: connection,
             redis_results: RedisCourseResultV1::new(tests.len()),
@@ -165,6 +169,7 @@ impl StateMachine for RunnerV1 {
         let Self {
             progress,
             tree,
+            target,
             mut client,
             tests,
             mut redis_results,
@@ -183,12 +188,13 @@ impl StateMachine for RunnerV1 {
                     tests.len().to_string().bold()
                 ));
 
-                format_spinner(&progress);
+                format_bar(&progress);
 
                 if tests.is_empty() {
                     Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -203,6 +209,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -222,7 +229,7 @@ impl StateMachine for RunnerV1 {
                 progress.inc(1);
 
                 // Testing happens HERE
-                let success_inc = match &tests[index_test].1.run() {
+                let success_inc = match &tests[index_test].1.run(&target) {
                     TestResult::Pass(stdout) => {
                         let query = tree
                             .update_and_fetch(&tests[index_test].0, test_pass);
@@ -236,6 +243,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                target,
                                 client,
                                 tests,
                                 redis_results,
@@ -276,6 +284,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                target,
                                 client,
                                 tests,
                                 redis_results,
@@ -314,6 +323,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
+                                target,
                                 client,
                                 tests,
                                 redis_results,
@@ -333,6 +343,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -347,6 +358,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -370,6 +382,7 @@ impl StateMachine for RunnerV1 {
                 Self {
                     progress,
                     tree,
+                    target,
                     client,
                     tests,
                     redis_results,
@@ -403,6 +416,7 @@ impl StateMachine for RunnerV1 {
                 Self {
                     progress,
                     tree,
+                    target,
                     client,
                     tests,
                     redis_results,
@@ -437,6 +451,7 @@ impl StateMachine for RunnerV1 {
                     return Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -459,6 +474,7 @@ impl StateMachine for RunnerV1 {
                     return Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -494,6 +510,7 @@ impl StateMachine for RunnerV1 {
                     return Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -520,6 +537,7 @@ impl StateMachine for RunnerV1 {
                     return Self {
                         progress,
                         tree,
+                        target,
                         client,
                         tests,
                         redis_results,
@@ -544,6 +562,7 @@ impl StateMachine for RunnerV1 {
                 Self {
                     progress,
                     tree,
+                    target,
                     client,
                     tests,
                     redis_results,
@@ -557,6 +576,7 @@ impl StateMachine for RunnerV1 {
             RunnerStateV1::Finish => Self {
                 progress,
                 tree,
+                target,
                 client,
                 tests,
                 redis_results,

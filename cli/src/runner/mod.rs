@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use regex::Regex;
-
 use crate::monitor::StateMachine;
 
 use self::v1::RunnerV1;
@@ -58,15 +56,4 @@ fn format_bar(progress: &ProgressBar) {
         ProgressStyle::with_template("{wide_bar} {message} {elapsed_precise}")
             .unwrap(),
     );
-}
-
-fn submodule_name(stdout: &str) -> String {
-    let regex = Regex::new(r"-[abcdef0123456789]* (?<submodule>\w*)").unwrap();
-    let capture = regex.captures(stdout).map(|c| c["submodule"].to_string());
-
-    // extracts the submodule name
-    match capture {
-        Some(submodule) => submodule,
-        None => "".to_string(),
-    }
 }
