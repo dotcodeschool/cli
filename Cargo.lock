@@ -320,6 +320,7 @@ dependencies = [
  "chrono",
  "clap",
  "colored",
+ "course",
  "env_logger",
  "hex",
  "indexmap",

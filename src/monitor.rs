@@ -417,8 +417,7 @@ impl Monitor {
     ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
         // TODO: use https://docs.rs/zeroize/latest/zeroize/ to handle ws address
         // + should be received from initial curl response
-        let (mut client, _) =
-            tungstenite::client::connect("ws://3.90.105.11:8080")?;
+        let (mut client, _) = tungstenite::client::connect("SECRET")?;
         client.send(Message::Text(format!(
             concat!(
                 "{{",

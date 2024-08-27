@@ -1,9 +1,9 @@
-[workspace]
-members = [
-    "cli",
-    "course",
-]
-resolver = "2"
+[package]
+name = "dotcodeschool-cli"
+version = "0.1.0"
+edition = "2021"
+author = "Trantorian"
+description = "A simple test runner for DotCodeShool courses"
 
 [profile.dev]
 incremental = true
@@ -20,7 +20,7 @@ opt-level = 3        # Optimize for speed regardless of binary size or compile t
 rpath = false        # Disables adding rpath to the binary
 strip = "symbols"    # Removes debug info and symbold from final binary
 
-[workspace.dependencies]
+[dependencies]
 # utilities
 itertools = "0.13.0"
 lazy_static = "1.5.0"
