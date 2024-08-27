@@ -59,6 +59,7 @@ pub enum PathLink {
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct TestState {
     pub name: String,
+    pub slug: String,
     pub message_on_success: String,
     pub message_on_fail: String,
     pub cmd: Vec<String>,

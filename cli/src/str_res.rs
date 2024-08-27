@@ -1,6 +1,8 @@
 use colored::Colorize;
 use lazy_static::lazy_static;
 
+pub const LOG: &str = "./dcs.log";
+
 lazy_static! {
     pub static ref DOTCODESCHOOL: String =
         "[ DotCodeSchool CLI ]".bold().truecolor(230, 0, 122).to_string();

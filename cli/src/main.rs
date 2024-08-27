@@ -1,7 +1,7 @@
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use db::PATH_DB;
-use env_logger::Builder;
+use env_logger::{Builder, Env, Target};
 use monitor::{Monitor, MonitorError, StateMachine};
 use std::io::Write;
 
@@ -53,17 +53,7 @@ struct TestOptions {
 fn main() -> Result<(), MonitorError> {
     let args = Cli::parse();
 
-    Builder::from_default_env()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .init();
+    init_log()?;
 
     let path_course = match args.course {
         Some(path) => &path.clone(),
@@ -105,6 +95,29 @@ fn main() -> Result<(), MonitorError> {
             }
         }
     }
+
+    Ok(())
+}
+
+fn init_log() -> Result<(), MonitorError> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(str_res::LOG)?;
+
+    Builder::from_default_env()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .target(Target::Pipe(Box::new(file)))
+        .init();
 
     Ok(())
 }

@@ -1,10 +1,10 @@
-use std::{env::args, net::TcpStream};
+use std::net::TcpStream;
 
 use indicatif::ProgressBar;
 
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
-use parity_scale_codec::{Decode, Encode, Output};
+use parity_scale_codec::{Decode, Encode};
 use sled::IVec;
 use thiserror::Error;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
@@ -115,7 +115,7 @@ impl Monitor {
             }
         };
 
-        log::debug!("initiating redis client at '{}'", metadata.logstream_url);
+        log::debug!("initiating redis websocket stream");
 
         let client = Self::init_ws_stream(course.name())?;
 
@@ -172,7 +172,7 @@ impl Monitor {
             }
         };
 
-        log::debug!("initiating redis client at '{}'", metadata.logstream_url);
+        log::debug!("initiating redis websocket stream");
 
         let client = Self::init_ws_stream(course.name())?;
 
@@ -383,8 +383,10 @@ impl Monitor {
             .output()?;
 
         let hash = String::from_utf8(output.stdout).unwrap();
-        let stream_id = [course_name, &hash].concat();
+        let stream_id = [&hash, course_name].concat();
 
+        // TODO: use https://docs.rs/zeroize/latest/zeroize/ to handle ws address
+        // + should be received from initial curl response
         let (mut client, _) = tungstenite::client::connect("SECRET")?;
         client.send(Message::Text(format!(
             concat!(

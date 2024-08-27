@@ -3,12 +3,15 @@ use std::net::TcpStream;
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
 use sled::IVec;
-use tungstenite::{stream::MaybeTlsStream, WebSocket};
+use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
     db::{TestState, ValidationState},
     monitor::StateMachine,
-    parsing::{v1::redis::RedisTestResultV1, TestResult},
+    parsing::{
+        v1::redis::{RedisCourseResultV1, RedisTestResultV1},
+        TestResult,
+    },
 };
 
 use super::{format_output, format_spinner};
@@ -58,7 +61,7 @@ pub const TEST_DIR: &str = "./course";
 /// ### Suite definition
 ///
 /// ```json
-/// {
+// {
 ///     "name": "Suite name",
 ///     "optional": false,
 ///     "tests": [
@@ -66,7 +69,7 @@ pub const TEST_DIR: &str = "./course";
 ///     ]
 /// }
 /// ```
-///
+/// 
 /// Test suites marked as optional do not need to be passed for the course to be
 /// validated. They will however still count towards the overall success of the
 /// course, so if a student passes 9 mandatory test suites but fails 1 optional
@@ -92,9 +95,9 @@ pub const TEST_DIR: &str = "./course";
 pub struct RunnerV1 {
     progress: ProgressBar,
     tree: sled::Tree,
-    connection: WebSocket<MaybeTlsStream<TcpStream>>,
+    client: WebSocket<MaybeTlsStream<TcpStream>>,
     tests: Vec<(IVec, TestState)>,
-    redis_results: Vec<(String, String)>,
+    redis_results: RedisCourseResultV1,
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
@@ -121,8 +124,8 @@ impl RunnerV1 {
         Self {
             progress,
             tree,
-            connection,
-            redis_results: Vec::with_capacity(tests.len() + 1),
+            client: connection,
+            redis_results: RedisCourseResultV1::new(tests.len()),
             tests,
             success: 0,
             state: RunnerStateV1::Loaded,
@@ -146,8 +149,8 @@ impl RunnerV1 {
         Self {
             progress,
             tree,
-            connection,
-            redis_results: Vec::with_capacity(tests.len() + 1),
+            client: connection,
+            redis_results: RedisCourseResultV1::new(tests.len()),
             tests,
             success: 0,
             state: RunnerStateV1::Loaded,
@@ -162,7 +165,7 @@ impl StateMachine for RunnerV1 {
         let Self {
             progress,
             tree,
-            mut connection,
+            mut client,
             tests,
             mut redis_results,
             success,
@@ -186,7 +189,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        connection,
+                        client,
                         tests,
                         redis_results,
                         success,
@@ -200,7 +203,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        connection,
+                        client,
                         tests,
                         redis_results,
                         success,
@@ -219,7 +222,7 @@ impl StateMachine for RunnerV1 {
                 progress.inc(1);
 
                 // Testing happens HERE
-                match &tests[index_test].1.run() {
+                let success_inc = match &tests[index_test].1.run() {
                     TestResult::Pass(stdout) => {
                         let query = tree
                             .update_and_fetch(&tests[index_test].0, test_pass);
@@ -233,7 +236,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
-                                connection,
+                                client,
                                 tests,
                                 redis_results,
                                 success,
@@ -251,15 +254,14 @@ impl StateMachine for RunnerV1 {
                             ),
                         );
 
-                        redis_results.push((
-                            tests[index_test].1.name.clone(),
-                            serde_json::to_string(&RedisTestResultV1::pass(
-                                &output,
-                            ))
-                            .unwrap(),
+                        redis_results.log_test(RedisTestResultV1::pass(
+                            &tests[index_test].1.slug,
+                            &output,
                         ));
 
                         progress.println(output);
+
+                        1
                     }
                     TestResult::Fail(stderr) => {
                         let query = tree
@@ -274,7 +276,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
-                                connection,
+                                client,
                                 tests,
                                 redis_results,
                                 success,
@@ -295,26 +297,24 @@ impl StateMachine for RunnerV1 {
                         .dimmed()
                         .to_string();
 
-                        redis_results.push((
-                            tests[index_test].1.name.clone(),
-                            serde_json::to_string(&RedisTestResultV1::fail(
-                                &output,
-                            ))
-                            .unwrap(),
+                        redis_results.log_test(RedisTestResultV1::fail(
+                            &tests[index_test].1.slug,
+                            &output,
+                            tests[index_test].1.optional,
                         ));
 
                         progress.println(output);
 
                         if !tests[index_test].1.optional {
                             let state = RunnerStateV1::Fail(format!(
-                                "failed to update test {}",
-                                &tests[index_test].1.name
+                                "Test {}:{} failed",
+                                index_test, &tests[index_test].1.name
                             ));
 
                             return Self {
                                 progress,
                                 tree,
-                                connection,
+                                client,
                                 tests,
                                 redis_results,
                                 success,
@@ -323,6 +323,8 @@ impl StateMachine for RunnerV1 {
                                 on_fail,
                             };
                         }
+
+                        0
                     }
                 };
 
@@ -331,10 +333,10 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        connection,
+                        client,
                         tests,
                         redis_results,
-                        success: success + 1,
+                        success: success + success_inc,
                         state: RunnerStateV1::NewTest {
                             index_test: index_test + 1,
                         },
@@ -345,10 +347,10 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        connection,
+                        client,
                         tests,
                         redis_results,
-                        success: success + 1,
+                        success: success + success_inc,
                         state: RunnerStateV1::Pass,
                         on_pass,
                         on_fail,
@@ -363,14 +365,12 @@ impl StateMachine for RunnerV1 {
                 progress.finish_and_clear();
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
-                redis_results.push(("passed".to_string(), "false".to_string()));
-
                 on_fail();
 
                 Self {
                     progress,
                     tree,
-                    connection,
+                    client,
                     tests,
                     redis_results,
                     success,
@@ -396,14 +396,14 @@ impl StateMachine for RunnerV1 {
                     score.green().bold()
                 ));
 
-                redis_results.push(("passed".to_string(), "true".to_string()));
+                redis_results.pass();
 
                 on_pass();
 
                 Self {
                     progress,
                     tree,
-                    connection,
+                    client,
                     tests,
                     redis_results,
                     success,
@@ -413,6 +413,8 @@ impl StateMachine for RunnerV1 {
                 }
             }
             RunnerStateV1::Redis => {
+                log::debug!("Streaming results back to DotCodeSchool");
+
                 format_spinner(&progress);
 
                 progress.set_message(
@@ -423,36 +425,126 @@ impl StateMachine for RunnerV1 {
                         .to_string(),
                 );
 
-                // match connection.xadd::<&str, &str, String, String, String>(
-                //     "todo",
-                //     "*",
-                //     &redis_results,
-                // ) {
-                //     Ok(_) => {
-                //         progress.finish_and_clear();
-                //         progress.println(
-                //             "Results streamed back successfully"
-                //                 .white()
-                //                 .dimmed()
-                //                 .italic()
-                //                 .to_string(),
-                //         );
-                //     }
-                //     Err(_) => {
-                //         progress.finish_and_clear();
-                //         progress.println(
-                //             "❌ Failed to update DotCodeSchool"
-                //                 .red()
-                //                 .bold()
-                //                 .to_string(),
-                //         );
-                //     }
-                // }
+                #[cfg(debug_assertions)]
+                let Ok(results) = serde_json::to_string_pretty(&redis_results) else {
+                    progress.println(
+                        "🚫 Failed to convert tests results to JSON"
+                            .red()
+                            .to_string(),
+                    );
+                    progress.finish_and_clear();
+
+                    return Self {
+                        progress,
+                        tree,
+                        client,
+                        tests,
+                        redis_results,
+                        success,
+                        state: RunnerStateV1::Finish,
+                        on_pass,
+                        on_fail,
+                    };
+                };
+
+                #[cfg(not(debug_assertions))]
+                let Ok(results) = serde_json::to_string(&redis_results) else {
+                    progress.println(
+                        "🚫 Failed to convert tests results to JSON"
+                            .red()
+                            .to_string(),
+                    );
+                    progress.finish_and_clear();
+
+                    return Self {
+                        progress,
+                        tree,
+                        client,
+                        tests,
+                        redis_results,
+                        success,
+                        state: RunnerStateV1::Finish,
+                        on_pass,
+                        on_fail,
+                    };
+                };
+
+                log::debug!("Test results: {results}");
+
+                let query = client.send(Message::Text(format!(
+                    concat!(
+                        "{{",
+                        "\"event_type:\"",
+                        "\"log\",",
+                        "\"bytes:\"",
+                        "\"{},\"",
+                        "}}"
+                    ),
+                    results
+                )));
+
+                if let Err(_) = query {
+                    progress.println(
+                        "🚫 Failed to stream results back to DotCodeSchool"
+                            .red()
+                            .to_string(),
+                    );
+                    progress.finish_and_clear();
+
+                    return Self {
+                        progress,
+                        tree,
+                        client,
+                        tests,
+                        redis_results,
+                        success,
+                        state: RunnerStateV1::Finish,
+                        on_pass,
+                        on_fail,
+                    };
+                }
+
+                log::debug!("Closing websocket connection");
+
+                let query = client.send(Message::Text(
+                    concat!("{{", "\"event_type:\"", "\"disconnect\"", "}}")
+                        .to_string(),
+                ));
+
+                if let Err(_) = query {
+                    progress.println(
+                        "🚫 Failed to close websocket".red().to_string(),
+                    );
+                    progress.finish_and_clear();
+
+                    return Self {
+                        progress,
+                        tree,
+                        client,
+                        tests,
+                        redis_results,
+                        success,
+                        state: RunnerStateV1::Finish,
+                        on_pass,
+                        on_fail,
+                    };
+                }
+
+                log::debug!("Test results streamed back successfully");
+
+                progress.println(
+                    "DotCodeSchool updated successfully"
+                        .white()
+                        .dimmed()
+                        .italic()
+                        .to_string(),
+                );
+                progress.finish_and_clear();
 
                 Self {
                     progress,
                     tree,
-                    connection,
+                    client,
                     tests,
                     redis_results,
                     success,
@@ -465,7 +557,7 @@ impl StateMachine for RunnerV1 {
             RunnerStateV1::Finish => Self {
                 progress,
                 tree,
-                connection,
+                client,
                 tests,
                 redis_results,
                 success,

@@ -185,6 +185,7 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
 
                         let test = TestState {
                             name: test.name.clone(),
+                            slug: test.slug.clone(),
                             message_on_success: test.message_on_success.clone(),
                             message_on_fail: test.message_on_fail.clone(),
                             cmd,
