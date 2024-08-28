@@ -1,9 +1,6 @@
-use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use db::PATH_DB;
-use env_logger::{Builder, Target};
 use monitor::{Monitor, MonitorError, StateMachine};
-use std::io::Write;
 
 mod db;
 mod lister;
@@ -20,8 +17,10 @@ const PATH_COURSE: &str = "./course.json";
 struct Cli {
     #[command(subcommand)]
     command: Command,
-    #[arg(short, long)]
+    #[arg(long)]
     course: Option<String>,
+    #[arg(long)]
+    db: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -53,17 +52,31 @@ struct TestOptions {
 fn main() -> Result<(), MonitorError> {
     let args = Cli::parse();
 
-    init_log()?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(str_res::LOG)?;
+
+    let _ = simplelog::WriteLogger::init(
+        simplelog::LevelFilter::Debug,
+        simplelog::ConfigBuilder::default()
+            .add_filter_allow_str("dotcodeschool_cli")
+            .build(),
+        file,
+    );
 
     let path_course = match args.course {
-        Some(path) => &path.clone(),
-        None => PATH_COURSE,
+        Some(path) => path,
+        None => PATH_COURSE.to_string(),
     };
 
-    // TODO: add '--db' flag
-    let path_db = PATH_DB;
+    let path_db = match args.db {
+        Some(path) => path,
+        None => PATH_DB.to_string(),
+    };
 
-    let monitor = Monitor::new(path_db, path_course)?;
+    let monitor = Monitor::new(&path_db, &path_course)?;
 
     match args.command {
         Command::Test(TestArgs { name, options }) => {
@@ -95,29 +108,6 @@ fn main() -> Result<(), MonitorError> {
             }
         }
     }
-
-    Ok(())
-}
-
-fn init_log() -> Result<(), MonitorError> {
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(str_res::LOG)?;
-
-    Builder::from_default_env()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .target(Target::Pipe(Box::new(file)))
-        .init();
 
     Ok(())
 }

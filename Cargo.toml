@@ -28,10 +28,9 @@ indexmap = "2.3.0"
 
 # logging
 log = "0.4.22"
-env_logger = "0.11.5"
-chrono = "0.4.38"
+simplelog = "0.12.2"
 colored = "2.1.0"
-tungstenite = "0.23.0"
+tungstenite = "0.24.0"
 
 # parsing
 serde = { version = "1.0", features = ["derive"] }
@@ -49,8 +48,3 @@ sled = "0.34.7"
 parity-scale-codec = { version = "3.6.12", features = ["derive"] }
 blake2 = "0.10.6"
 hex = "0.4.3"
-
-course = { path = "./course" }
-
-
-
