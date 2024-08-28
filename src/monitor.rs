@@ -19,7 +19,7 @@ use crate::{
         load_course, CourseMetaData, JsonCourse, JsonCourseVersion,
         ParsingError,
     },
-    runner::{v1::RunnerV1, RunnerVersion},
+    runner::{v1::RunnerV1Builder, RunnerVersion},
     str_res::{DOTCODESCHOOL, STAGGERED},
     validator::{
         v1::{ValidatorStateV1, ValidatorV1},
@@ -128,19 +128,16 @@ impl Monitor {
             JsonCourseVersion::V1(_) => {
                 progress.set_length(tests.len() as u64);
 
-                let runner = RunnerV1::new_with_hooks(
-                    progress,
-                    target,
-                    tree,
-                    client,
-                    tests,
-                    move || {
-                        let _ = Self::tester_repo_destroy(&stream_id);
-                    },
-                    move || {
+                let runner = RunnerV1Builder::new()
+                    .progress(progress)
+                    .target(target)
+                    .tree(tree)
+                    .client(client)
+                    .tests(tests)
+                    .on_finish(move || {
                         let _ = Self::tester_repo_destroy(&stream_id_1);
-                    },
-                );
+                    })
+                    .build();
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -213,21 +210,20 @@ impl Monitor {
 
                 progress.set_length(test_count as u64);
 
-                let runner = RunnerV1::new_with_hooks(
-                    progress,
-                    target,
-                    tree.clone(),
-                    client,
-                    tests,
-                    move || {
+                let runner = RunnerV1Builder::new()
+                    .progress(progress)
+                    .target(target)
+                    .tree(tree.clone())
+                    .client(client)
+                    .tests(tests)
+                    .on_pass(move || {
                         let staggered = staggered + 1;
                         let _ = tree.insert(KEY_STAGGERED, staggered.encode());
-                        let _ = Self::tester_repo_destroy(&stream_id);
-                    },
-                    move || {
+                    })
+                    .on_finish(move || {
                         let _ = Self::tester_repo_destroy(&stream_id_1);
-                    },
-                );
+                    })
+                    .build();
 
                 Ok(RunnerVersion::V1(runner))
             }
@@ -407,6 +403,7 @@ impl Monitor {
             .output()?;
 
         let hash = String::from_utf8(output.stdout).unwrap();
+        // TODO: use log_stream stream id
         let stream_id = [&hash, course_name].concat();
 
         Ok(stream_id)

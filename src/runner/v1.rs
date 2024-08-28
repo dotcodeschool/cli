@@ -2,7 +2,6 @@ use std::net::TcpStream;
 
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
-use sled::IVec;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
@@ -95,12 +94,13 @@ pub struct RunnerV1 {
     target: String,
     tree: sled::Tree,
     client: WebSocket<MaybeTlsStream<TcpStream>>,
-    tests: Vec<(IVec, TestState)>,
+    tests: Vec<(sled::IVec, TestState)>,
     redis_results: RedisCourseResultV1,
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
     on_fail: Box<dyn Fn()>,
+    on_finish: Box<dyn Fn()>,
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -111,57 +111,6 @@ pub enum RunnerStateV1 {
     Pass,
     Redis,
     Finish,
-}
-
-impl RunnerV1 {
-    #[allow(dead_code)]
-    pub fn new(
-        progress: ProgressBar,
-        target: String,
-        tree: sled::Tree,
-        connection: WebSocket<MaybeTlsStream<TcpStream>>,
-        tests: Vec<(IVec, TestState)>,
-    ) -> Self {
-        Self {
-            progress,
-            target,
-            tree,
-            client: connection,
-            redis_results: RedisCourseResultV1::new(tests.len()),
-            tests,
-            success: 0,
-            state: RunnerStateV1::Loaded,
-            on_pass: Box::new(|| {}),
-            on_fail: Box::new(|| {}),
-        }
-    }
-
-    pub fn new_with_hooks<F1, F2>(
-        progress: ProgressBar,
-        target: String,
-        tree: sled::Tree,
-        connection: WebSocket<MaybeTlsStream<TcpStream>>,
-        tests: Vec<(IVec, TestState)>,
-        on_pass: F1,
-        on_fail: F2,
-    ) -> Self
-    where
-        F1: Fn() + 'static,
-        F2: Fn() + 'static,
-    {
-        Self {
-            progress,
-            target,
-            tree,
-            client: connection,
-            redis_results: RedisCourseResultV1::new(tests.len()),
-            tests,
-            success: 0,
-            state: RunnerStateV1::Loaded,
-            on_pass: Box::new(on_pass),
-            on_fail: Box::new(on_fail),
-        }
-    }
 }
 
 impl StateMachine for RunnerV1 {
@@ -177,6 +126,7 @@ impl StateMachine for RunnerV1 {
             state,
             on_pass,
             on_fail,
+            on_finish,
         } = self;
 
         match state {
@@ -204,6 +154,7 @@ impl StateMachine for RunnerV1 {
                         ),
                         on_pass,
                         on_fail,
+                        on_finish,
                     }
                 } else {
                     Self {
@@ -217,6 +168,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::NewTest { index_test: 0 },
                         on_pass,
                         on_fail,
+                        on_finish,
                     }
                 }
             }
@@ -251,6 +203,7 @@ impl StateMachine for RunnerV1 {
                                 state,
                                 on_pass,
                                 on_fail,
+                                on_finish,
                             };
                         }
 
@@ -292,6 +245,7 @@ impl StateMachine for RunnerV1 {
                                 state,
                                 on_pass,
                                 on_fail,
+                                on_finish,
                             };
                         }
 
@@ -331,6 +285,7 @@ impl StateMachine for RunnerV1 {
                                 state,
                                 on_pass,
                                 on_fail,
+                                on_finish,
                             };
                         }
 
@@ -353,6 +308,7 @@ impl StateMachine for RunnerV1 {
                         },
                         on_pass,
                         on_fail,
+                        on_finish,
                     }
                 } else {
                     Self {
@@ -366,6 +322,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Pass,
                         on_pass,
                         on_fail,
+                        on_finish,
                     }
                 }
             }
@@ -378,6 +335,7 @@ impl StateMachine for RunnerV1 {
                 progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
 
                 on_fail();
+                on_finish();
 
                 Self {
                     progress,
@@ -390,6 +348,7 @@ impl StateMachine for RunnerV1 {
                     state: RunnerStateV1::Redis,
                     on_pass,
                     on_fail,
+                    on_finish,
                 }
             }
             // ALL mandatory tests passed. Displays the success rate across
@@ -412,6 +371,7 @@ impl StateMachine for RunnerV1 {
                 redis_results.pass();
 
                 on_pass();
+                on_finish();
 
                 Self {
                     progress,
@@ -424,6 +384,7 @@ impl StateMachine for RunnerV1 {
                     state: RunnerStateV1::Redis,
                     on_pass,
                     on_fail,
+                    on_finish,
                 }
             }
             RunnerStateV1::Redis => {
@@ -459,6 +420,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Finish,
                         on_pass,
                         on_fail,
+                        on_finish,
                     };
                 };
 
@@ -482,6 +444,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Finish,
                         on_pass,
                         on_fail,
+                        on_finish,
                     };
                 };
 
@@ -518,6 +481,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Finish,
                         on_pass,
                         on_fail,
+                        on_finish,
                     };
                 }
 
@@ -545,6 +509,7 @@ impl StateMachine for RunnerV1 {
                         state: RunnerStateV1::Finish,
                         on_pass,
                         on_fail,
+                        on_finish,
                     };
                 }
 
@@ -570,6 +535,7 @@ impl StateMachine for RunnerV1 {
                     state: RunnerStateV1::Finish,
                     on_pass,
                     on_fail,
+                    on_finish,
                 }
             }
             // Exit state, does nothing when called.
@@ -584,6 +550,7 @@ impl StateMachine for RunnerV1 {
                 state: RunnerStateV1::Finish,
                 on_pass,
                 on_fail,
+                on_finish,
             },
         }
     }
@@ -609,4 +576,193 @@ fn test_fail(old: Option<&[u8]>) -> Option<Vec<u8>> {
     test.passed = ValidationState::Fail;
 
     Some(test.encode())
+}
+
+pub struct RunnerV1Builder<A, B, C, D, E, F> {
+    progress: A,
+    target: B,
+    tree: C,
+    client: D,
+    tests: E,
+    redis_results: F,
+    success: u32,
+    state: RunnerStateV1,
+    on_pass: Box<dyn Fn()>,
+    on_fail: Box<dyn Fn()>,
+    on_finish: Box<dyn Fn()>,
+}
+
+impl RunnerV1Builder<(), (), (), (), (), ()> {
+    pub fn new() -> Self {
+        RunnerV1Builder {
+            progress: (),
+            target: (),
+            tree: (),
+            client: (),
+            tests: (),
+            redis_results: (),
+            success: 0,
+            state: RunnerStateV1::Loaded,
+            on_pass: Box::new(|| {}),
+            on_fail: Box::new(|| {}),
+            on_finish: Box::new(|| {}),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
+    pub fn progress(
+        self,
+        progress: ProgressBar,
+    ) -> RunnerV1Builder<ProgressBar, B, C, D, E, F> {
+        RunnerV1Builder {
+            progress,
+            target: self.target,
+            tree: self.tree,
+            client: self.client,
+            tests: self.tests,
+            redis_results: self.redis_results,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
+
+    pub fn target(
+        self,
+        target: String,
+    ) -> RunnerV1Builder<A, String, C, D, E, F> {
+        RunnerV1Builder {
+            progress: self.progress,
+            target,
+            tree: self.tree,
+            client: self.client,
+            tests: self.tests,
+            redis_results: self.redis_results,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
+
+    pub fn tree(
+        self,
+        tree: sled::Tree,
+    ) -> RunnerV1Builder<A, B, sled::Tree, D, E, F> {
+        RunnerV1Builder {
+            progress: self.progress,
+            target: self.target,
+            tree,
+            client: self.client,
+            tests: self.tests,
+            redis_results: self.redis_results,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
+
+    pub fn client(
+        self,
+        client: WebSocket<MaybeTlsStream<TcpStream>>,
+    ) -> RunnerV1Builder<A, B, C, WebSocket<MaybeTlsStream<TcpStream>>, E, F>
+    {
+        RunnerV1Builder {
+            progress: self.progress,
+            target: self.target,
+            tree: self.tree,
+            client,
+            tests: self.tests,
+            redis_results: self.redis_results,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
+
+    pub fn tests(
+        self,
+        tests: Vec<(sled::IVec, TestState)>,
+    ) -> RunnerV1Builder<
+        A,
+        B,
+        C,
+        D,
+        Vec<(sled::IVec, TestState)>,
+        RedisCourseResultV1,
+    > {
+        RunnerV1Builder {
+            progress: self.progress,
+            target: self.target,
+            tree: self.tree,
+            client: self.client,
+            redis_results: RedisCourseResultV1::new(tests.len()),
+            tests,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
+
+    pub fn on_pass<F1>(mut self, f: F1) -> RunnerV1Builder<A, B, C, D, E, F>
+    where
+        F1: Fn() + 'static,
+    {
+        self.on_pass = Box::new(f);
+        self
+    }
+
+    pub fn on_fail<F2>(mut self, f: F2) -> RunnerV1Builder<A, B, C, D, E, F>
+    where
+        F2: Fn() + 'static,
+    {
+        self.on_fail = Box::new(f);
+        self
+    }
+
+    pub fn on_finish<F3>(mut self, f: F3) -> RunnerV1Builder<A, B, C, D, E, F>
+    where
+        F3: Fn() + 'static,
+    {
+        self.on_finish = Box::new(f);
+        self
+    }
+}
+
+impl
+    RunnerV1Builder<
+        ProgressBar,
+        String,
+        sled::Tree,
+        WebSocket<MaybeTlsStream<TcpStream>>,
+        Vec<(sled::IVec, TestState)>,
+        RedisCourseResultV1,
+    >
+{
+    pub fn build(self) -> RunnerV1 {
+        RunnerV1 {
+            progress: self.progress,
+            target: self.target,
+            tree: self.tree,
+            client: self.client,
+            tests: self.tests,
+            redis_results: self.redis_results,
+            success: self.success,
+            state: self.state,
+            on_pass: self.on_pass,
+            on_fail: self.on_fail,
+            on_finish: self.on_finish,
+        }
+    }
 }
