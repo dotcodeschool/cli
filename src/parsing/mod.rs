@@ -40,6 +40,8 @@ pub enum TestResult {
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Default)]
 pub struct CourseMetaData {
     pub logstream_url: String,
+    pub logstream_id: String,
+    pub ws_url: String,
     pub tester_url: String,
 }
 

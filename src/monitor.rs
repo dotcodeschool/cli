@@ -45,8 +45,6 @@ pub enum MonitorError {
 pub struct Monitor {
     course: JsonCourseVersion,
     progress: ProgressBar,
-    #[allow(dead_code)]
-    db: sled::Db,
     tree: sled::Tree,
 }
 
@@ -55,14 +53,14 @@ impl Monitor {
         match load_course(path_course) {
             Ok(course) => {
                 let tests_new = course.list_tests();
-                let (db, tree) = db_open(path_db, path_course)?;
+                let (_, tree) = db_open(path_db, path_course)?;
 
                 if db_should_update(&tree, path_course)? {
                     let metadata = course.fetch_metatdata()?;
                     db_update(&tree, &tests_new, metadata)?;
                 }
 
-                Ok(Self { course, progress: ProgressBar::new(0), db, tree })
+                Ok(Self { course, progress: ProgressBar::new(0), tree })
             }
             Err(e) => {
                 let msg = match e {
@@ -91,7 +89,13 @@ impl Monitor {
 
         let tests = match test_name {
             Some(test_name) => {
-                Self::tests_accumulate_matching(test_name, &tree)
+                let mut path_to = test_name.split("/").collect::<Vec<_>>();
+                path_to.reverse();
+                let key = path_to.join("/");
+
+                log::debug!("looking for tests which match path '{key}'");
+
+                Self::tests_accumulate_matching(key, &tree)
             }
             None => Self::tests_accumulate_all(&tree),
         }
@@ -117,12 +121,9 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let stream_id = Self::get_stream_id(course.name())?;
-        let stream_id_1 = stream_id.clone();
-        let target = format!("./{stream_id}");
-        let client = Self::ws_stream_init(&stream_id)?;
+        let client = Self::ws_stream_init(&metadata.ws_url)?;
 
-        Self::tester_repo_init(&metadata.tester_url, &stream_id)?;
+        Self::tester_repo_init(&metadata.tester_url)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -389,51 +390,28 @@ impl Monitor {
         tests.into_inner()
     }
 
-    fn get_stream_id(course_name: &str) -> Result<String, MonitorError> {
-        let output = std::process::Command::new("git")
-            .arg("rev-list")
-            .arg("HEAD")
-            .stdout(std::process::Stdio::piped())
-            .spawn()?;
-
-        let output = std::process::Command::new("tail")
-            .arg("-n")
-            .arg("1")
-            .stdin(std::process::Stdio::from(output.stdout.unwrap()))
-            .output()?;
-
-        let hash = String::from_utf8(output.stdout).unwrap();
-        // TODO: use log_stream stream id
-        let stream_id = [&hash, course_name].concat();
-
-        Ok(stream_id)
-    }
-
     fn ws_stream_init(
-        stream_id: &str,
+        ws_url: &str,
     ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
         // TODO: use https://docs.rs/zeroize/latest/zeroize/ to handle ws address
         // + should be received from initial curl response
-        let (mut client, _) = tungstenite::client::connect("SECRET")?;
-        client.send(Message::Text(format!(
+        let (mut client, _) = tungstenite::client::connect(ws_url)?;
+        client.send(Message::Text(
             concat!(
                 "{{",
                 "\"event_type\":",
                 "\"init\",",
                 "\"stream_id\":",
-                "\"{}\"",
+                "\"test\"",
                 "}}"
-            ),
-            stream_id
-        )))?;
+            )
+            .to_string(),
+        ))?;
 
         Ok(client)
     }
 
-    fn tester_repo_init(
-        repo_url: &str,
-        stream_id: &str,
-    ) -> Result<(), MonitorError> {
+    fn tester_repo_init(repo_url: &str) -> Result<(), MonitorError> {
         std::process::Command::new("git")
             .arg("clone")
             .arg(repo_url)

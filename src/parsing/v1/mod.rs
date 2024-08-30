@@ -220,7 +220,7 @@ impl<'a> JsonCourse<'a> for JsonCourseV1 {
 
         log::debug!("fetching metadata: {request}");
 
-        let output = std::process::Command::new("curl")
+        let ouput = std::process::Command::new("curl")
             .arg("-fsSL")
             .arg("-H")
             .arg("Content-Type: application/json")
