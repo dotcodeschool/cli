@@ -5,6 +5,7 @@ use indicatif::ProgressBar;
 use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
 use parity_scale_codec::{Decode, Encode};
+use rand::Rng;
 use sled::IVec;
 use thiserror::Error;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
@@ -122,8 +123,8 @@ impl Monitor {
         log::debug!("initiating redis websocket stream");
 
         let client = Self::ws_stream_init(&metadata.ws_url)?;
-
-        Self::tester_repo_init(&metadata.tester_url)?;
+        let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
+        let repo_name_1 = repo_name.clone();
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -131,12 +132,12 @@ impl Monitor {
 
                 let runner = RunnerV1Builder::new()
                     .progress(progress)
-                    .target(target)
+                    .target(repo_name)
                     .tree(tree)
                     .client(client)
                     .tests(tests)
                     .on_finish(move || {
-                        let _ = Self::tester_repo_destroy(&stream_id_1);
+                        let _ = Self::tester_repo_destroy(&repo_name_1);
                     })
                     .build();
 
@@ -189,12 +190,9 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let stream_id = Self::get_stream_id(course.name())?;
-        let stream_id_1 = stream_id.clone();
-        let target = format!("./{stream_id}");
-        let client = Self::ws_stream_init(&stream_id)?;
-
-        Self::tester_repo_init(&metadata.tester_url, &stream_id)?;
+        let client = Self::ws_stream_init(&metadata.ws_url)?;
+        let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
+        let repo_name_1 = repo_name.clone();
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -213,7 +211,7 @@ impl Monitor {
 
                 let runner = RunnerV1Builder::new()
                     .progress(progress)
-                    .target(target)
+                    .target(repo_name)
                     .tree(tree.clone())
                     .client(client)
                     .tests(tests)
@@ -222,7 +220,7 @@ impl Monitor {
                         let _ = tree.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
-                        let _ = Self::tester_repo_destroy(&stream_id_1);
+                        let _ = Self::tester_repo_destroy(&repo_name_1);
                     })
                     .build();
 
@@ -411,14 +409,20 @@ impl Monitor {
         Ok(client)
     }
 
-    fn tester_repo_init(repo_url: &str) -> Result<(), MonitorError> {
+    fn tester_repo_init(repo_url: &str) -> Result<String, MonitorError> {
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 32];
+
+        rng.fill(&mut bytes);
+        let repo_name = hex::encode(&bytes);
+
         std::process::Command::new("git")
             .arg("clone")
             .arg(repo_url)
-            .arg(stream_id)
+            .arg(&repo_name)
             .output()?;
 
-        Ok(())
+        Ok(repo_name)
     }
 
     fn tester_repo_destroy(stream_id: &str) -> Result<(), MonitorError> {
