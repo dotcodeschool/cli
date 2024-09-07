@@ -2,18 +2,16 @@ use std::net::TcpStream;
 
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
+use thiserror::Error;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
     db::{TestState, ValidationState},
     monitor::StateMachine,
-    parsing::{
-        v1::redis::{RedisCourseResultV1, RedisTestResultV1},
-        TestResult,
-    },
+    parsing::{v1::redis::RedisTestResultV1, TestResult},
 };
 
-use super::{format_bar, format_output, format_spinner};
+use super::{format_bar, format_output};
 
 use colored::Colorize;
 
@@ -95,7 +93,6 @@ pub struct RunnerV1 {
     tree: sled::Tree,
     client: WebSocket<MaybeTlsStream<TcpStream>>,
     tests: Vec<(sled::IVec, TestState)>,
-    redis_results: RedisCourseResultV1,
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
@@ -109,7 +106,6 @@ pub enum RunnerStateV1 {
     NewTest { index_test: usize },
     Fail(String),
     Pass,
-    Redis,
     Finish,
 }
 
@@ -121,7 +117,6 @@ impl StateMachine for RunnerV1 {
             target,
             mut client,
             tests,
-            mut redis_results,
             success,
             state,
             on_pass,
@@ -147,7 +142,6 @@ impl StateMachine for RunnerV1 {
                         target,
                         client,
                         tests,
-                        redis_results,
                         success,
                         state: RunnerStateV1::Fail(
                             "🚫 no tests found".to_string(),
@@ -163,7 +157,6 @@ impl StateMachine for RunnerV1 {
                         target,
                         client,
                         tests,
-                        redis_results,
                         success,
                         state: RunnerStateV1::NewTest { index_test: 0 },
                         on_pass,
@@ -198,7 +191,6 @@ impl StateMachine for RunnerV1 {
                                 target,
                                 client,
                                 tests,
-                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -215,10 +207,27 @@ impl StateMachine for RunnerV1 {
                             ),
                         );
 
-                        redis_results.log_test(RedisTestResultV1::pass(
+                        let test_result = RedisTestResultV1::pass(
                             &tests[index_test].1.slug,
                             &output,
-                        ));
+                        );
+
+                        if let Err(e) =
+                            json_report_test(test_result, &mut client)
+                        {
+                            return Self {
+                                progress,
+                                tree,
+                                target,
+                                client,
+                                tests,
+                                success,
+                                state: RunnerStateV1::Fail(e.to_string()),
+                                on_pass,
+                                on_fail,
+                                on_finish,
+                            };
+                        }
 
                         progress.println(output);
 
@@ -240,7 +249,6 @@ impl StateMachine for RunnerV1 {
                                 target,
                                 client,
                                 tests,
-                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -260,11 +268,28 @@ impl StateMachine for RunnerV1 {
                         .dimmed()
                         .to_string();
 
-                        redis_results.log_test(RedisTestResultV1::fail(
+                        let test_result = RedisTestResultV1::fail(
                             &tests[index_test].1.slug,
                             &output,
                             tests[index_test].1.optional,
-                        ));
+                        );
+
+                        if let Err(e) =
+                            json_report_test(test_result, &mut client)
+                        {
+                            return Self {
+                                progress,
+                                tree,
+                                target,
+                                client,
+                                tests,
+                                success,
+                                state: RunnerStateV1::Fail(e.to_string()),
+                                on_pass,
+                                on_fail,
+                                on_finish,
+                            };
+                        }
 
                         progress.println(output);
 
@@ -280,7 +305,6 @@ impl StateMachine for RunnerV1 {
                                 target,
                                 client,
                                 tests,
-                                redis_results,
                                 success,
                                 state,
                                 on_pass,
@@ -301,7 +325,6 @@ impl StateMachine for RunnerV1 {
                         target,
                         client,
                         tests,
-                        redis_results,
                         success: success + success_inc,
                         state: RunnerStateV1::NewTest {
                             index_test: index_test + 1,
@@ -317,7 +340,6 @@ impl StateMachine for RunnerV1 {
                         target,
                         client,
                         tests,
-                        redis_results,
                         success: success + success_inc,
                         state: RunnerStateV1::Pass,
                         on_pass,
@@ -337,15 +359,31 @@ impl StateMachine for RunnerV1 {
                 on_fail();
                 on_finish();
 
+                if let Err(_) =
+                    json_report_are_tests_passing(false, &mut client)
+                {
+                    progress.println(
+                        "🚫 Failed to send test results to DotCodeSchool"
+                            .red()
+                            .bold()
+                            .to_string(),
+                    );
+                }
+
+                if let Err(_) = json_report_close(&mut client) {
+                    progress.println(
+                        "🚫 Failed to close Websocket connection to DotCodeSchool".red().bold().to_string()
+                    );
+                }
+
                 Self {
                     progress,
                     tree,
                     target,
                     client,
                     tests,
-                    redis_results,
                     success,
-                    state: RunnerStateV1::Redis,
+                    state: RunnerStateV1::Finish,
                     on_pass,
                     on_fail,
                     on_finish,
@@ -368,161 +406,24 @@ impl StateMachine for RunnerV1 {
                     score.green().bold()
                 ));
 
-                redis_results.pass();
-
                 on_pass();
                 on_finish();
 
-                Self {
-                    progress,
-                    tree,
-                    target,
-                    client,
-                    tests,
-                    redis_results,
-                    success,
-                    state: RunnerStateV1::Redis,
-                    on_pass,
-                    on_fail,
-                    on_finish,
-                }
-            }
-            RunnerStateV1::Redis => {
-                log::debug!("Streaming results back to DotCodeSchool");
-
-                format_spinner(&progress);
-
-                progress.set_message(
-                    "⏳ Streaming results back to DotCodeSchool"
-                        .white()
-                        .dimmed()
-                        .italic()
-                        .to_string(),
-                );
-
-                #[cfg(debug_assertions)]
-                let Ok(results) = serde_json::to_string_pretty(&redis_results) else {
+                if let Err(_) = json_report_are_tests_passing(true, &mut client)
+                {
                     progress.println(
-                        "🚫 Failed to convert tests results to JSON"
+                        "🚫 Failed to send test results to DotCodeSchool"
                             .red()
+                            .bold()
                             .to_string(),
                     );
-                    progress.finish_and_clear();
-
-                    return Self {
-                        progress,
-                        tree,
-                        target,
-                        client,
-                        tests,
-                        redis_results,
-                        success,
-                        state: RunnerStateV1::Finish,
-                        on_pass,
-                        on_fail,
-                        on_finish,
-                    };
-                };
-
-                #[cfg(not(debug_assertions))]
-                let Ok(results) = serde_json::to_string(&redis_results) else {
-                    progress.println(
-                        "🚫 Failed to convert tests results to JSON"
-                            .red()
-                            .to_string(),
-                    );
-                    progress.finish_and_clear();
-
-                    return Self {
-                        progress,
-                        tree,
-                        target,
-                        client,
-                        tests,
-                        redis_results,
-                        success,
-                        state: RunnerStateV1::Finish,
-                        on_pass,
-                        on_fail,
-                        on_finish,
-                    };
-                };
-
-                log::debug!("Test results: {results}");
-
-                let query = client.send(Message::Text(format!(
-                    concat!(
-                        "{{",
-                        "\"event_type:\"",
-                        "\"log\",",
-                        "\"bytes:\"",
-                        "\"{},\"",
-                        "}}"
-                    ),
-                    results
-                )));
-
-                if let Err(_) = query {
-                    progress.println(
-                        "🚫 Failed to stream results back to DotCodeSchool"
-                            .red()
-                            .to_string(),
-                    );
-                    progress.finish_and_clear();
-
-                    return Self {
-                        progress,
-                        tree,
-                        target,
-                        client,
-                        tests,
-                        redis_results,
-                        success,
-                        state: RunnerStateV1::Finish,
-                        on_pass,
-                        on_fail,
-                        on_finish,
-                    };
                 }
 
-                log::debug!("Closing websocket connection");
-
-                let query = client.send(Message::Text(
-                    concat!("{{", "\"event_type:\"", "\"disconnect\"", "}}")
-                        .to_string(),
-                ));
-
-                if let Err(_) = query {
+                if let Err(_) = json_report_close(&mut client) {
                     progress.println(
-                        "🚫 Failed to close websocket".red().to_string(),
+                        "🚫 Failed to close Websocket connection to DotCodeSchool".red().bold().to_string()
                     );
-                    progress.finish_and_clear();
-
-                    return Self {
-                        progress,
-                        tree,
-                        target,
-                        client,
-                        tests,
-                        redis_results,
-                        success,
-                        state: RunnerStateV1::Finish,
-                        on_pass,
-                        on_fail,
-                        on_finish,
-                    };
                 }
-
-                log::debug!("Test results streamed back successfully");
-
-                progress.println(
-                    "DotCodeSchool updated successfully"
-                        .white()
-                        .dimmed()
-                        .italic()
-                        .to_string(),
-                );
-                progress.finish_and_clear();
 
                 Self {
                     progress,
@@ -530,7 +431,6 @@ impl StateMachine for RunnerV1 {
                     target,
                     client,
                     tests,
-                    redis_results,
                     success,
                     state: RunnerStateV1::Finish,
                     on_pass,
@@ -545,7 +445,6 @@ impl StateMachine for RunnerV1 {
                 target,
                 client,
                 tests,
-                redis_results,
                 success,
                 state: RunnerStateV1::Finish,
                 on_pass,
@@ -578,13 +477,138 @@ fn test_fail(old: Option<&[u8]>) -> Option<Vec<u8>> {
     Some(test.encode())
 }
 
-pub struct RunnerV1Builder<A, B, C, D, E, F> {
+#[derive(Error, Debug)]
+enum RedisReportError {
+    #[error("failed to convert test result to JSON: {0}")]
+    JsonError(String),
+    #[error("failed to send report via websocket: {0}")]
+    WsError(String),
+}
+
+fn json_report_test(
+    result: RedisTestResultV1,
+    client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+) -> Result<(), RedisReportError> {
+    #[cfg(debug_assertions)]
+    let json = serde_json::to_string_pretty(&result)
+        .map_err(|err| RedisReportError::JsonError(err.to_string()))?;
+
+    #[cfg(not(debug_assertions))]
+    let json = serde_json::to_string(&result)
+        .map_err(|err| RedisReportError::JsonError(err.to_string()))?;
+
+    log::debug!("Test result: {json}");
+
+    #[cfg(debug_assertions)]
+    let message = format!(
+        concat!(
+            "{{\n",
+            "  \"event_type\":",
+            "  \"log\",\n",
+            "  \"bytes\":",
+            "  \"{}\"\n",
+            "}}"
+        ),
+        json
+    );
+
+    #[cfg(not(debug_assertions))]
+    let message = format!(
+        concat!(
+            "{{",
+            "\"event_type\":",
+            "\"log\",",
+            "\"bytes\":",
+            "\"{}\"",
+            "}}"
+        ),
+        json
+    );
+
+    log::debug!("Sending message to redis: {message}");
+
+    client
+        .send(Message::Text(message))
+        .map_err(|err| RedisReportError::WsError(err.to_string()))?;
+
+    log::debug!("Message sent successfully");
+
+    Ok(())
+}
+
+fn json_report_are_tests_passing(
+    status: bool,
+    client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+) -> Result<(), RedisReportError> {
+    #[cfg(debug_assertions)]
+    let message = format!(
+        concat!(
+            "{{\n",
+            "  \"event_type\":\n",
+            "  \"log\",\n",
+            "  \"bytes\": {{\n",
+            "    \"success\": {}\n",
+            "  }}\n",
+            "}}"
+        ),
+        status
+    );
+
+    #[cfg(not(debug_assertions))]
+    let message = format!(
+        concat!(
+            "{{",
+            "\"event_type\":",
+            "\"log\",",
+            "\"bytes\":",
+            "\"success\": {}",
+            "}}"
+        ),
+        status
+    );
+
+    log::debug!("Sending message to redis: {message}");
+
+    client
+        .send(Message::Text(message))
+        .map_err(|err| RedisReportError::WsError(err.to_string()))?;
+
+    log::debug!("Message sent successfully");
+
+    Ok(())
+}
+
+fn json_report_close(
+    client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+) -> Result<(), RedisReportError> {
+    log::debug!("Closing websocket connection");
+
+    #[cfg(debug_assertions)]
+    let message =
+        concat!("{{\n", "  \"event_type\":", "  \"disconnect\"\n", "}}")
+            .to_string();
+
+    #[cfg(not(debug_assertions))]
+    let message =
+        concat!("{{", "\"event_type\":", "\"disconnect\"", "}}").to_string();
+
+    log::debug!("Sending message to redis: {message}");
+
+    client
+        .send(Message::Text(message))
+        .map_err(|err| RedisReportError::WsError(err.to_string()))?;
+
+    log::debug!("Websocket connection closed successfully");
+
+    Ok(())
+}
+
+pub struct RunnerV1Builder<A, B, C, D, E> {
     progress: A,
     target: B,
     tree: C,
     client: D,
     tests: E,
-    redis_results: F,
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
@@ -592,7 +616,7 @@ pub struct RunnerV1Builder<A, B, C, D, E, F> {
     on_finish: Box<dyn Fn()>,
 }
 
-impl RunnerV1Builder<(), (), (), (), (), ()> {
+impl RunnerV1Builder<(), (), (), (), ()> {
     pub fn new() -> Self {
         RunnerV1Builder {
             progress: (),
@@ -600,7 +624,6 @@ impl RunnerV1Builder<(), (), (), (), (), ()> {
             tree: (),
             client: (),
             tests: (),
-            redis_results: (),
             success: 0,
             state: RunnerStateV1::Loaded,
             on_pass: Box::new(|| {}),
@@ -611,18 +634,17 @@ impl RunnerV1Builder<(), (), (), (), (), ()> {
 }
 
 #[allow(dead_code)]
-impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
+impl<A, B, C, D, E> RunnerV1Builder<A, B, C, D, E> {
     pub fn progress(
         self,
         progress: ProgressBar,
-    ) -> RunnerV1Builder<ProgressBar, B, C, D, E, F> {
+    ) -> RunnerV1Builder<ProgressBar, B, C, D, E> {
         RunnerV1Builder {
             progress,
             target: self.target,
             tree: self.tree,
             client: self.client,
             tests: self.tests,
-            redis_results: self.redis_results,
             success: self.success,
             state: self.state,
             on_pass: self.on_pass,
@@ -631,17 +653,13 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
         }
     }
 
-    pub fn target(
-        self,
-        target: String,
-    ) -> RunnerV1Builder<A, String, C, D, E, F> {
+    pub fn target(self, target: String) -> RunnerV1Builder<A, String, C, D, E> {
         RunnerV1Builder {
             progress: self.progress,
             target,
             tree: self.tree,
             client: self.client,
             tests: self.tests,
-            redis_results: self.redis_results,
             success: self.success,
             state: self.state,
             on_pass: self.on_pass,
@@ -653,14 +671,13 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
     pub fn tree(
         self,
         tree: sled::Tree,
-    ) -> RunnerV1Builder<A, B, sled::Tree, D, E, F> {
+    ) -> RunnerV1Builder<A, B, sled::Tree, D, E> {
         RunnerV1Builder {
             progress: self.progress,
             target: self.target,
             tree,
             client: self.client,
             tests: self.tests,
-            redis_results: self.redis_results,
             success: self.success,
             state: self.state,
             on_pass: self.on_pass,
@@ -672,15 +689,13 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
     pub fn client(
         self,
         client: WebSocket<MaybeTlsStream<TcpStream>>,
-    ) -> RunnerV1Builder<A, B, C, WebSocket<MaybeTlsStream<TcpStream>>, E, F>
-    {
+    ) -> RunnerV1Builder<A, B, C, WebSocket<MaybeTlsStream<TcpStream>>, E> {
         RunnerV1Builder {
             progress: self.progress,
             target: self.target,
             tree: self.tree,
             client,
             tests: self.tests,
-            redis_results: self.redis_results,
             success: self.success,
             state: self.state,
             on_pass: self.on_pass,
@@ -692,20 +707,12 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
     pub fn tests(
         self,
         tests: Vec<(sled::IVec, TestState)>,
-    ) -> RunnerV1Builder<
-        A,
-        B,
-        C,
-        D,
-        Vec<(sled::IVec, TestState)>,
-        RedisCourseResultV1,
-    > {
+    ) -> RunnerV1Builder<A, B, C, D, Vec<(sled::IVec, TestState)>> {
         RunnerV1Builder {
             progress: self.progress,
             target: self.target,
             tree: self.tree,
             client: self.client,
-            redis_results: RedisCourseResultV1::new(tests.len()),
             tests,
             success: self.success,
             state: self.state,
@@ -715,7 +722,7 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
         }
     }
 
-    pub fn on_pass<F1>(mut self, f: F1) -> RunnerV1Builder<A, B, C, D, E, F>
+    pub fn on_pass<F1>(mut self, f: F1) -> RunnerV1Builder<A, B, C, D, E>
     where
         F1: Fn() + 'static,
     {
@@ -723,7 +730,7 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
         self
     }
 
-    pub fn on_fail<F2>(mut self, f: F2) -> RunnerV1Builder<A, B, C, D, E, F>
+    pub fn on_fail<F2>(mut self, f: F2) -> RunnerV1Builder<A, B, C, D, E>
     where
         F2: Fn() + 'static,
     {
@@ -731,7 +738,7 @@ impl<A, B, C, D, E, F> RunnerV1Builder<A, B, C, D, E, F> {
         self
     }
 
-    pub fn on_finish<F3>(mut self, f: F3) -> RunnerV1Builder<A, B, C, D, E, F>
+    pub fn on_finish<F3>(mut self, f: F3) -> RunnerV1Builder<A, B, C, D, E>
     where
         F3: Fn() + 'static,
     {
@@ -747,7 +754,6 @@ impl
         sled::Tree,
         WebSocket<MaybeTlsStream<TcpStream>>,
         Vec<(sled::IVec, TestState)>,
-        RedisCourseResultV1,
     >
 {
     pub fn build(self) -> RunnerV1 {
@@ -757,7 +763,6 @@ impl
             tree: self.tree,
             client: self.client,
             tests: self.tests,
-            redis_results: self.redis_results,
             success: self.success,
             state: self.state,
             on_pass: self.on_pass,

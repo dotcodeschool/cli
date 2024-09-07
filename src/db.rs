@@ -235,10 +235,10 @@ pub fn db_update(
         |err| DbError::DbInsert(hex::encode(KEY_METADATA), err.to_string()),
     )?;
 
-    // Inserts all new tests. This could be optimized so that only that
-    // have changed are updated -and this was the was initially. However,
-    // the complexity of deciding when a test is db is invalid is too much
-    // for something as simple (and most likely infrequent) as this
+    // Inserts all new tests. This could be optimized so that only test that
+    // have changed are updated -and this was the case initially. However, the
+    // maintenance cost of deciding when a test in db is invalid proved to be
+    // too much for something as simple (and most likely infrequent) as this
     for (key, test) in tests.iter() {
         tree.insert(key, test.encode()).map_err(|err| {
             DbError::DbInsert(hex::encode(key), err.to_string())
@@ -250,6 +250,12 @@ pub fn db_update(
         tests.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
     tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
         DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
+    })?;
+
+    // Resets staggered test count: this is the number of tests to have
+    // successfully be run sequentially
+    tree.insert(KEY_STAGGERED, 0u32.encode()).map_err(|err| {
+        DbError::DbInsert(hex::encode(KEY_STAGGERED), err.to_string())
     })?;
 
     Ok(())

@@ -43,6 +43,7 @@ fn format_output(output: &str, msg: &str) -> String {
     format!("    ╭─[ output ]{output}\n    ╰─[ {msg} ]")
 }
 
+#[allow(dead_code)]
 fn format_spinner(progress: &ProgressBar) {
     progress.set_style(
         ProgressStyle::with_template("\n{spinner} {msg} {elapsed_precise}")
