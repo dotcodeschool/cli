@@ -5,7 +5,7 @@ use blake2::{
     digest::{Update, VariableOutput},
     Blake2bVar,
 };
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use parity_scale_codec::{Decode, Encode};
 use thiserror::Error;
 
@@ -35,8 +35,6 @@ pub enum DbError {
     DbGet(String, String),
     #[error("failed to insert value at key '{0}': {1}")]
     DbInsert(String, String),
-    #[error("failed to remove value at key '{0}': {1}")]
-    DbRemove(String, String),
     #[error("failed to decode data stored at key '{0}': {1}")]
     DecodeError(String, String),
     #[error("failed to retrieve course metadata")]
@@ -230,70 +228,29 @@ pub fn db_should_update(
 
 pub fn db_update(
     tree: &sled::Tree,
-    tests_new: &IndexMap<String, TestState>,
+    tests: &IndexMap<String, TestState>,
     metadata: CourseMetaData,
 ) -> Result<(), DbError> {
     tree.insert(KEY_METADATA, CourseMetaData::encode(&metadata)).map_err(
         |err| DbError::DbInsert(hex::encode(KEY_METADATA), err.to_string()),
     )?;
 
-    let tests_old = tree
-        .get(KEY_TESTS)
-        .map_err(|err| DbError::DbGet(hex::encode(KEY_TESTS), err.to_string()))?
-        .map(|bytes| <Vec<String>>::decode(&mut &bytes[..]).unwrap());
-
-    // Db already contains tests for this course file.
-    if let Some(tests_old) = tests_old {
-        let tests_keys_old = tests_old.into_iter().collect::<IndexSet<_>>();
-        let tests_keys_new = tests_new
-            .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<IndexSet<_>>();
-
-        let test_keys_deprecated =
-            tests_keys_old.difference(&tests_keys_new).collect::<Vec<_>>();
-
-        // Removes all tests which are no longer in course file
-        for key_str in test_keys_deprecated {
-            let key = key_str.encode();
-            tree.remove(&key).map_err(|err| {
-                DbError::DbRemove(hex::encode(&key), err.to_string())
-            })?;
-        }
-
-        let tests_keys_unkown =
-            tests_keys_new.difference(&tests_keys_old).collect::<Vec<_>>();
-
-        // Inserts tests which were not already in the course file
-        for key in tests_keys_unkown {
-            let test = tests_new.get(key).unwrap();
-
-            tree.insert(key, test.encode()).map_err(|err| {
-                DbError::DbInsert(hex::encode(key), err.to_string())
-            })?;
-        }
-
-        // Updates the list of available tests
-        let test_keys_new = tests_keys_new.iter().collect::<Vec<_>>();
-        tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
-            DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
-        })?;
-    // Db does not already contain tests for the current course file
-    } else {
-        // Inserts all new tests
-        for (key, test) in tests_new.iter() {
-            tree.insert(key, test.encode()).map_err(|err| {
-                DbError::DbInsert(hex::encode(key), err.to_string())
-            })?;
-        }
-
-        // Updates the list of available tests
-        let test_keys_new =
-            tests_new.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
-        tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
-            DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
+    // Inserts all new tests. This could be optimized so that only that
+    // have changed are updated -and this was the was initially. However,
+    // the complexity of deciding when a test is db is invalid is too much
+    // for something as simple (and most likely infrequent) as this
+    for (key, test) in tests.iter() {
+        tree.insert(key, test.encode()).map_err(|err| {
+            DbError::DbInsert(hex::encode(key), err.to_string())
         })?;
     }
+
+    // Updates the list of available tests
+    let test_keys_new =
+        tests.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+    tree.insert(KEY_TESTS, test_keys_new.encode()).map_err(|err| {
+        DbError::DbInsert(hex::encode(KEY_TESTS), err.to_string())
+    })?;
 
     Ok(())
 }

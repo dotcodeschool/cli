@@ -92,7 +92,7 @@ impl Monitor {
             Some(test_name) => {
                 let mut path_to = test_name.split("/").collect::<Vec<_>>();
                 path_to.reverse();
-                let key = path_to.join("/");
+                let key = path_to.join("");
 
                 log::debug!("looking for tests which match path '{key}'");
 
