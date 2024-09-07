@@ -46,7 +46,7 @@ struct TestOptions {
     #[arg(long, group = "exclusive")]
     list: bool,
     #[arg(long, group = "exclusive")]
-    staggered: bool,
+    all: bool,
 }
 
 fn main() -> Result<(), MonitorError> {
@@ -86,14 +86,14 @@ fn main() -> Result<(), MonitorError> {
                 while !lister.is_finished() {
                     lister = lister.run();
                 }
-            } else if options.staggered {
-                let mut runner = monitor.into_runner_staggered()?;
+            } else if options.all || name.is_some() {
+                let mut runner = monitor.into_runner(name)?;
 
                 while !runner.is_finished() {
                     runner = runner.run();
                 }
             } else {
-                let mut runner = monitor.into_runner(name)?;
+                let mut runner = monitor.into_runner_staggered()?;
 
                 while !runner.is_finished() {
                     runner = runner.run();

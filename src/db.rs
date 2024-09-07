@@ -254,7 +254,7 @@ pub fn db_update(
 
     // Resets staggered test count: this is the number of tests to have
     // successfully be run sequentially
-    tree.insert(KEY_STAGGERED, 0u32.encode()).map_err(|err| {
+    tree.insert(KEY_STAGGERED, 1u32.encode()).map_err(|err| {
         DbError::DbInsert(hex::encode(KEY_STAGGERED), err.to_string())
     })?;
 

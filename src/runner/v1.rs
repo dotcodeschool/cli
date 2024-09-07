@@ -96,7 +96,7 @@ pub struct RunnerV1 {
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
-    on_fail: Box<dyn Fn()>,
+    on_fail: Box<dyn Fn(usize)>,
     on_finish: Box<dyn Fn()>,
 }
 
@@ -104,7 +104,7 @@ pub struct RunnerV1 {
 pub enum RunnerStateV1 {
     Loaded,
     NewTest { index_test: usize },
-    Fail(String),
+    Fail { index_test: usize, err: String },
     Pass,
     Finish,
 }
@@ -143,9 +143,10 @@ impl StateMachine for RunnerV1 {
                         client,
                         tests,
                         success,
-                        state: RunnerStateV1::Fail(
-                            "🚫 no tests found".to_string(),
-                        ),
+                        state: RunnerStateV1::Fail {
+                            index_test: 0,
+                            err: "🚫 no tests found".to_string(),
+                        },
                         on_pass,
                         on_fail,
                         on_finish,
@@ -180,10 +181,13 @@ impl StateMachine for RunnerV1 {
                             .update_and_fetch(&tests[index_test].0, test_pass);
 
                         if query.is_err() || matches!(query, Ok(None)) {
-                            let state = RunnerStateV1::Fail(format!(
-                                "failed to update test {}",
-                                tests[index_test].1.name
-                            ));
+                            let state = RunnerStateV1::Fail {
+                                index_test,
+                                err: format!(
+                                    "failed to update test {}",
+                                    tests[index_test].1.name
+                                ),
+                            };
 
                             return Self {
                                 progress,
@@ -222,7 +226,10 @@ impl StateMachine for RunnerV1 {
                                 client,
                                 tests,
                                 success,
-                                state: RunnerStateV1::Fail(e.to_string()),
+                                state: RunnerStateV1::Fail {
+                                    index_test,
+                                    err: e.to_string(),
+                                },
                                 on_pass,
                                 on_fail,
                                 on_finish,
@@ -238,10 +245,13 @@ impl StateMachine for RunnerV1 {
                             .update_and_fetch(&tests[index_test].0, test_fail);
 
                         if query.is_err() || matches!(query, Ok(None)) {
-                            let state = RunnerStateV1::Fail(format!(
-                                "failed to update test {}",
-                                tests[index_test].1.name
-                            ));
+                            let state = RunnerStateV1::Fail {
+                                index_test,
+                                err: format!(
+                                    "failed to update test {}",
+                                    tests[index_test].1.name
+                                ),
+                            };
 
                             return Self {
                                 progress,
@@ -284,7 +294,10 @@ impl StateMachine for RunnerV1 {
                                 client,
                                 tests,
                                 success,
-                                state: RunnerStateV1::Fail(e.to_string()),
+                                state: RunnerStateV1::Fail {
+                                    index_test,
+                                    err: e.to_string(),
+                                },
                                 on_pass,
                                 on_fail,
                                 on_finish,
@@ -294,10 +307,13 @@ impl StateMachine for RunnerV1 {
                         progress.println(output);
 
                         if !tests[index_test].1.optional {
-                            let state = RunnerStateV1::Fail(format!(
-                                "Test {}:{} failed",
-                                index_test, &tests[index_test].1.name
-                            ));
+                            let state = RunnerStateV1::Fail {
+                                index_test,
+                                err: format!(
+                                    "Test {}:{} failed",
+                                    index_test, &tests[index_test].1.name
+                                ),
+                            };
 
                             return Self {
                                 progress,
@@ -352,11 +368,11 @@ impl StateMachine for RunnerV1 {
             // defined in the `message_on_fail` field of a
             // Test JSON object. This state can also be used for general
             // error logging.
-            RunnerStateV1::Fail(msg) => {
+            RunnerStateV1::Fail { index_test, err } => {
                 progress.finish_and_clear();
-                progress.println(format!("\n⚠ Error: {}", msg.red().bold()));
+                progress.println(format!("\n⚠ Error: {}", err.red().bold()));
 
-                on_fail();
+                on_fail(index_test);
                 on_finish();
 
                 if let Err(_) =
@@ -612,7 +628,7 @@ pub struct RunnerV1Builder<A, B, C, D, E> {
     success: u32,
     state: RunnerStateV1,
     on_pass: Box<dyn Fn()>,
-    on_fail: Box<dyn Fn()>,
+    on_fail: Box<dyn Fn(usize)>,
     on_finish: Box<dyn Fn()>,
 }
 
@@ -627,7 +643,7 @@ impl RunnerV1Builder<(), (), (), (), ()> {
             success: 0,
             state: RunnerStateV1::Loaded,
             on_pass: Box::new(|| {}),
-            on_fail: Box::new(|| {}),
+            on_fail: Box::new(|_| {}),
             on_finish: Box::new(|| {}),
         }
     }
@@ -732,7 +748,7 @@ impl<A, B, C, D, E> RunnerV1Builder<A, B, C, D, E> {
 
     pub fn on_fail<F2>(mut self, f: F2) -> RunnerV1Builder<A, B, C, D, E>
     where
-        F2: Fn() + 'static,
+        F2: Fn(usize) + 'static,
     {
         self.on_fail = Box::new(f);
         self

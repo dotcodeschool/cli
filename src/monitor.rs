@@ -123,19 +123,30 @@ impl Monitor {
         log::debug!("initiating redis websocket stream");
 
         let client = Self::ws_stream_init(&metadata.ws_url)?;
-        let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
-        let repo_name_1 = repo_name.clone();
 
         match course {
             JsonCourseVersion::V1(_) => {
                 progress.set_length(tests.len() as u64);
 
+                let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
+                let repo_name_1 = repo_name.clone();
+                let tree1 = tree.clone();
+                let staggered = tests.len() as u32;
+
                 let runner = RunnerV1Builder::new()
                     .progress(progress)
                     .target(repo_name)
-                    .tree(tree)
+                    .tree(tree.clone())
                     .client(client)
                     .tests(tests)
+                    .on_pass(move || {
+                        let _ = tree.insert(KEY_STAGGERED, staggered.encode());
+                    })
+                    .on_fail(move |index_test| {
+                        // TODO: is this good UX?
+                        let staggered = (index_test + 1) as u32;
+                        let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
+                    })
                     .on_finish(move || {
                         let _ = Self::tester_repo_destroy(&repo_name_1);
                     })
@@ -191,8 +202,6 @@ impl Monitor {
         log::debug!("initiating redis websocket stream");
 
         let client = Self::ws_stream_init(&metadata.ws_url)?;
-        let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
-        let repo_name_1 = repo_name.clone();
 
         match course {
             JsonCourseVersion::V1(course) => {
@@ -209,6 +218,10 @@ impl Monitor {
 
                 progress.set_length(test_count as u64);
 
+                let repo_name = Self::tester_repo_init(&metadata.tester_url)?;
+                let repo_name_1 = repo_name.clone();
+                let tree1 = tree.clone();
+
                 let runner = RunnerV1Builder::new()
                     .progress(progress)
                     .target(repo_name)
@@ -218,6 +231,11 @@ impl Monitor {
                     .on_pass(move || {
                         let staggered = staggered + 1;
                         let _ = tree.insert(KEY_STAGGERED, staggered.encode());
+                    })
+                    .on_fail(move |index_test| {
+                        // TODO: is this good UX?
+                        let staggered = (index_test + 1) as u32;
+                        let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
                         let _ = Self::tester_repo_destroy(&repo_name_1);
