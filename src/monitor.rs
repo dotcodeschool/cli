@@ -429,7 +429,7 @@ impl Monitor {
 
     fn tester_repo_init(repo_url: &str) -> Result<String, MonitorError> {
         let mut rng = rand::thread_rng();
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8; 16];
 
         rng.fill(&mut bytes);
         let repo_name = hex::encode(&bytes);
@@ -443,8 +443,8 @@ impl Monitor {
         Ok(repo_name)
     }
 
-    fn tester_repo_destroy(stream_id: &str) -> Result<(), MonitorError> {
-        let path = format!("./{stream_id}");
+    fn tester_repo_destroy(repo_name: &str) -> Result<(), MonitorError> {
+        let path = format!("./{repo_name}");
         std::fs::remove_dir_all(path)?;
 
         Ok(())

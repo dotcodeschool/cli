@@ -62,7 +62,7 @@
                   "name": "Foo",
                   "slug": "0x56e3",
                   "optional": true,
-                  "cmd": "cargo test -p course foo",
+                  "cmd": "cargo test foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
                 },
@@ -70,7 +70,7 @@
                   "name": "Bazz",
                   "slug": "0x4992",
                   "optional": true,
-                  "cmd": "cargo test -p course bazz",
+                  "cmd": "cargo test bazz",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
                 }
@@ -85,7 +85,7 @@
                   "name": "Foo",
                   "slug": "0x7b65",
                   "optional": true,
-                  "cmd": "cargo test -p course foo",
+                  "cmd": "cargo test foo",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
                 },
@@ -93,7 +93,7 @@
                   "name": "Bazz",
                   "slug": "0x7961",
                   "optional": true,
-                  "cmd": "cargo test -p course bazz",
+                  "cmd": "cargo test bazz",
                   "message_on_fail": "This test failed, back to the drawing board.",
                   "message_on_success": "This test passed, congrats!"
                 }

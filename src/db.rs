@@ -69,6 +69,7 @@ pub struct TestState {
 impl TestState {
     pub fn run(&self, target: &str) -> TestResult {
         log::debug!("Running test: '{:?}", self.cmd);
+        log::debug!("Test location: '{:?}", target);
 
         let output = std::process::Command::new(&self.cmd[0])
             .args(self.cmd[1..].iter())
