@@ -67,7 +67,7 @@ if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -gt 299 ]; then
   exit 1
 fi
 
-tar xzf "$TEMP_FILE" -C "$TEMP_FOLDER" dotcodeschool
+tar xzf "$TEMP_FILE" -C "$TEMP_FOLDER" dotcodeschool-cli && mv "$TEMP_FOLDER/dotcodeschool-cli" "$TEMP_FOLDER/dotcodeschool"
 
 chmod 0755 "$TEMP_FOLDER/dotcodeschool"
 
