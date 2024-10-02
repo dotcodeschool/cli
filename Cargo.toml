@@ -55,3 +55,4 @@ strum = "0.26.3"
 strum_macros = "0.26.4"
 bson = "2.13.0"
 serde_yaml = "0.9.34"
+openssl = { version = "0.10", features = ["vendored"] }
