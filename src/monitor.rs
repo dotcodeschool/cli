@@ -6,6 +6,7 @@ use colored::Colorize;
 use itertools::{FoldWhile, Itertools};
 use parity_scale_codec::{Decode, Encode};
 use rand::Rng;
+use reqwest::blocking::Client;
 use sled::IVec;
 use thiserror::Error;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
@@ -16,9 +17,10 @@ use crate::{
         KEY_STAGGERED, KEY_TESTS,
     },
     lister::{v1::ListerV1, ListerVersion},
+    models::TesterDefinition,
     parsing::{
-        load_course, CourseMetaData, JsonCourse, JsonCourseVersion,
-        ParsingError,
+        load_course, load_repo, load_tester, CourseMetaData, JsonCourse,
+        JsonCourseVersion, MetadataError, ParsingError,
     },
     runner::{v1::RunnerV1Builder, RunnerVersion},
     str_res::{DOTCODESCHOOL, STAGGERED},
@@ -41,45 +43,39 @@ pub enum MonitorError {
     WSError(#[from] tungstenite::Error),
     #[error("{0}")]
     IOError(#[from] std::io::Error),
+    #[error("{0}")]
+    ParsingError(#[from] ParsingError),
+    #[error("{0}")]
+    MetadataError(#[from] MetadataError),
 }
 
 pub struct Monitor {
     course: JsonCourseVersion,
+    tester: TesterDefinition,
     progress: ProgressBar,
     tree: sled::Tree,
 }
 
 impl Monitor {
-    pub fn new(path_db: &str, path_course: &str) -> Result<Self, DbError> {
-        match load_course(path_course) {
-            Ok(course) => {
-                let tests_new = course.list_tests();
-                let (_, tree) = db_open(path_db, path_course)?;
+    pub fn new(path_db: &str) -> Result<Self, MonitorError> {
+        log::debug!("Creating new Monitor instance");
+        let client = Client::new();
+        let course = load_course(&client)?;
+        let tester = load_tester(&client, &course)?;
+        let repo = load_repo()?;
+        let tests_new = tester.list_tests();
 
-                if db_should_update(&tree, path_course)? {
-                    let metadata = course.fetch_metatdata()?;
-                    db_update(&tree, &tests_new, metadata)?;
-                }
+        let (_, tree) = db_open(path_db, ".")?;
 
-                Ok(Self { course, progress: ProgressBar::new(0), tree })
-            }
-            Err(e) => {
-                let msg = match e {
-                    ParsingError::CourseFmtError(msg) => msg,
-                    ParsingError::FileOpenError(msg) => msg,
-                };
-                log::error!("{msg}");
-
-                Err(DbError::DbOpen(
-                    path_db.to_string(),
-                    "could not deserialize course".to_string(),
-                ))
-            }
+        if db_should_update(&tree, ".")? {
+            let metadata = repo.fetch_metadata()?;
+            db_update(&tree, &tests_new, metadata)?;
         }
+
+        log::debug!("Monitor instance created successfully");
+        Ok(Self { course, progress: ProgressBar::new(0), tree, tester })
     }
 
-    /// Creates a new [Runner] instance depending on the version specified in
-    /// the course json config file.
     pub fn into_runner(
         self,
         test_name: Option<String>,
@@ -160,7 +156,7 @@ impl Monitor {
     pub fn into_runner_staggered(self) -> Result<RunnerVersion, MonitorError> {
         self.greet();
 
-        let Self { course, progress, tree, .. } = self;
+        let Self { course, progress, tree, tester, .. } = self;
 
         progress.println(format!("\n{}", STAGGERED.clone()));
 
@@ -204,8 +200,8 @@ impl Monitor {
         let client = Self::ws_stream_init(&metadata.ws_url)?;
 
         match course {
-            JsonCourseVersion::V1(course) => {
-                let test_count = course.stages.iter().fold(0, |acc, stage| {
+            JsonCourseVersion::V1(_) => {
+                let test_count = tester.stages.iter().fold(0, |acc, stage| {
                     acc + stage.lessons.iter().fold(0, |acc, lesson| {
                         acc + match &lesson.suites {
                             Some(suites) => suites
@@ -250,12 +246,12 @@ impl Monitor {
     pub fn into_validator(self) -> ValidatorVersion {
         self.greet();
 
-        let Self { course, progress, .. } = self;
+        let Self { course, progress, tester, .. } = self;
 
         match course {
             JsonCourseVersion::V1(course) => {
                 let slug_count =
-                    1 + course.stages.iter().fold(0, |acc, stage| {
+                    1 + tester.stages.iter().fold(0, |acc, stage| {
                         acc + 1
                             + stage.lessons.iter().fold(0, |acc, lesson| {
                                 acc + 1
@@ -277,6 +273,7 @@ impl Monitor {
                     progress,
                     ValidatorStateV1::Loaded,
                     course,
+                    tester,
                 );
 
                 ValidatorVersion::V1(validator)
@@ -432,7 +429,7 @@ impl Monitor {
         let mut bytes = [0u8; 16];
 
         rng.fill(&mut bytes);
-        let repo_name = hex::encode(&bytes);
+        let repo_name = hex::encode(bytes);
 
         std::process::Command::new("git")
             .arg("clone")

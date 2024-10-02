@@ -1,16 +1,24 @@
-//! A module for parsing `tests.json` files.
+//! A module for parsing course data.
 //!
-//! This module is concerned with loading `test.json` files, parsing them and
-//! executing providing an implementation for executing tests. The actual
+//! This module is concerned with loading course data from the backend API,
+//! parsing it, and providing an implementation for executing tests. The actual
 //! execution is the responsibility of the test [runner].
 
-use indexmap::IndexMap;
+use git2::Repository;
 use parity_scale_codec::{Decode, Encode};
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use std::path::Path;
 use thiserror::Error;
+use v1::JsonRepoV1;
 
-use crate::{db::TestState, parsing::v1::JsonCourseV1};
+use crate::{
+    constants::BACKEND_URL,
+    models::{
+        Course, Relationship, Repository as RepositoryModel, TesterDefinition,
+    },
+    parsing::v1::JsonCourseV1,
+};
 
 pub mod v1;
 
@@ -18,10 +26,22 @@ pub const V_1_0: &str = "1.0";
 
 #[derive(Error, Debug)]
 pub enum ParsingError {
-    #[error("failed to open course file at {0}")]
-    FileOpenError(String),
     #[error("invalid course format: {0}")]
     CourseFmtError(String),
+    #[error("failed to fetch course data: {0}")]
+    CourseFetchError(String),
+    #[error("invalid repository format: {0}")]
+    RepositoryFmtError(String),
+    #[error("failed to extract repo name: {0}")]
+    RepoNameExtractionError(String),
+    #[error("failed to fetch repository data: {0}")]
+    RepositoryFetchError(String),
+    #[error("HTTP request error: {0}")]
+    HttpError(#[from] reqwest::Error),
+    #[error("Git error: {0}")]
+    GitError(#[from] git2::Error),
+    #[error("YAML parsing error: {0}")]
+    YamlError(#[from] serde_yaml::Error),
 }
 
 #[derive(Error, Debug)]
@@ -48,8 +68,6 @@ pub struct CourseMetaData {
 pub trait JsonCourse<'a> {
     fn name(&'a self) -> &'a str;
     fn author(&'a self) -> &'a str;
-    fn list_tests(&self) -> IndexMap<String, TestState>;
-    fn fetch_metatdata(&self) -> Result<CourseMetaData, MetadataError>;
 }
 
 pub enum JsonCourseVersion {
@@ -68,53 +86,175 @@ impl<'a> JsonCourse<'a> for JsonCourseVersion {
             JsonCourseVersion::V1(course) => course.author(),
         }
     }
+}
 
-    fn list_tests(&self) -> IndexMap<String, TestState> {
-        match self {
-            JsonCourseVersion::V1(course) => course.list_tests(),
-        }
+fn extract_repo_name() -> Result<String, ParsingError> {
+    log::debug!("Extracting repo name from .git/config");
+    let repo = Repository::open(".")?;
+    let remote = repo.find_remote("origin")?;
+    let url = remote.url().ok_or_else(|| {
+        ParsingError::RepoNameExtractionError("No remote URL found".to_string())
+    })?;
+
+    log::debug!("Found remote URL: {}", url);
+
+    let repo_name = Path::new(url)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+        ParsingError::RepoNameExtractionError(
+            "Failed to extract repo name from URL".to_string(),
+        )
+    })?;
+
+    log::debug!("Extracted repo name: {}", repo_name);
+    Ok(repo_name.to_string())
+}
+
+fn fetch_course(
+    client: &Client,
+    course_id: &str,
+) -> Result<Course, ParsingError> {
+    log::debug!("Fetching course with id `{}`", course_id);
+    let response =
+        client.get(format!("{}/course/{}", BACKEND_URL, course_id)).send()?;
+
+    if !response.status().is_success() {
+        log::error!(
+            "Failed to fetch course data. HTTP status: {}",
+            response.status()
+        );
+        return Err(ParsingError::CourseFetchError(format!(
+            "HTTP error: {}",
+            response.status()
+        )));
     }
 
-    fn fetch_metatdata(&self) -> Result<CourseMetaData, MetadataError> {
-        match self {
-            JsonCourseVersion::V1(course) => course.fetch_metatdata(),
+    log::debug!("{:#?}", response);
+
+    let response_text = response
+        .json()
+        .map_err(|e| ParsingError::CourseFetchError(e.to_string()));
+
+    log::debug!("Successfully fetched course data:\n{:#?}", response_text);
+
+    response_text
+}
+
+fn fetch_repository(
+    client: &Client,
+    repo_name: &str,
+) -> Result<RepositoryModel, ParsingError> {
+    log::debug!("Fetching repository details for `{}`", repo_name);
+    let response = client
+        .get(format!("{}/repository/{}", BACKEND_URL, repo_name))
+        .send()?;
+
+    if !response.status().is_success() {
+        log::error!(
+            "Failed to fetch repository data. HTTP status: {}",
+            response.status()
+        );
+        return Err(ParsingError::RepositoryFetchError(format!(
+            "HTTP error: {}",
+            response.status()
+        )));
+    }
+
+    let response_text = response
+        .json()
+        .map_err(|e| ParsingError::RepositoryFetchError(e.to_string()));
+    log::debug!("Successfully fetched repository data:\n{:#?}", response_text);
+
+    response_text
+}
+
+pub fn load_course(client: &Client) -> Result<JsonCourseVersion, ParsingError> {
+    log::debug!("Starting to load course");
+
+    let repo_name = extract_repo_name()?;
+    let repo_data = fetch_repository(client, &repo_name)?;
+
+    let course_relation: &Relationship =
+        repo_data.relationships.get("course").ok_or(()).map_err(|_| {
+            ParsingError::RepositoryFmtError(
+                "missing field 'relationships.course' in repository data"
+                    .to_string(),
+            )
+        })?;
+
+    let course_data: Course =
+        fetch_course(client, &course_relation.id.to_string())?;
+
+    log::debug!("Parsing course data");
+
+    let version = &course_data.version;
+
+    log::debug!("Course version: {:?}", version);
+
+    let Course { version, slug, name, title, tester_url, author, .. } =
+        course_data.clone();
+
+    match version.as_ref() {
+        V_1_0 => {
+            log::debug!("Parsing course data as version 1.0");
+            let json_course_v1 =
+                JsonCourseV1 { version, slug, author, name, title, tester_url };
+
+            log::debug!("Course loaded successfully!");
+
+            Ok(JsonCourseVersion::V1(json_course_v1))
+        }
+        _ => {
+            log::error!("Invalid course version: {}", version);
+            Err(ParsingError::CourseFmtError(format!(
+                "invalid course version '{version}' in course data"
+            )))
         }
     }
 }
 
-pub fn load_course(path: &str) -> Result<JsonCourseVersion, ParsingError> {
-    log::debug!("Loading course '{path}'");
+pub fn load_tester(
+    client: &Client,
+    course: &JsonCourseVersion,
+) -> Result<TesterDefinition, ParsingError> {
+    log::debug!("Starting to load tester definition");
 
-    let file_contents = std::fs::read_to_string(path).map_err(|_| {
-        ParsingError::FileOpenError(format!("failed to open file at {path}"))
-    })?;
-    let json_raw = serde_json::from_str::<serde_json::Value>(&file_contents)
-        .map_err(|err| ParsingError::CourseFmtError(err.to_string()))?;
-    let version = json_raw.get("version").ok_or(()).map_err(|_| {
-        ParsingError::CourseFmtError(format!(
-            "missing field 'version' in {path}"
-        ))
-    })?;
+    let tester_url = match course {
+        JsonCourseVersion::V1(course) => &course.tester_url,
+    };
 
-    match version {
-        Value::String(version) => match version.as_ref() {
-            V_1_0 => {
-                let json_course_v1 =
-                    serde_json::from_str::<JsonCourseV1>(&file_contents)
-                        .map_err(|err| {
-                            ParsingError::CourseFmtError(err.to_string())
-                        })?;
+    // Construct the URL for the tester-definition.yml file
+    let tester_definition_url =
+        format!("{}/raw/refs/heads/master/tester-definition.yml", tester_url);
+    log::debug!("Fetching tester definition from: {}", tester_definition_url);
 
-                log::debug!("Course loaded successfully!");
+    // Fetch the tester-definition.yml file
+    let response = client.get(&tester_definition_url).send()?;
 
-                Ok(JsonCourseVersion::V1(json_course_v1))
-            }
-            _ => Err(ParsingError::CourseFmtError(format!(
-                "invalid course version '{version}' in {path}"
-            ))),
-        },
-        _ => Err(ParsingError::CourseFmtError(format!(
-            "'version' must be a string in {path}"
-        ))),
+    if !response.status().is_success() {
+        log::error!(
+            "Failed to fetch tester definition. HTTP status: {}",
+            response.status()
+        );
+        return Err(ParsingError::RepositoryFetchError(format!(
+            "HTTP error: {}",
+            response.status()
+        )));
     }
+
+    // Get the content of the response as text
+    let yaml_content = response.text()?;
+    log::debug!("Successfully fetched tester definition YAML");
+
+    // Parse the YAML content into TesterDefinition
+    let tester_definition: TesterDefinition =
+        serde_yaml::from_str(&yaml_content)?;
+    log::debug!("Successfully parsed tester definition");
+
+    Ok(tester_definition)
+}
+
+pub fn load_repo() -> Result<JsonRepoV1, ParsingError> {
+    Ok(JsonRepoV1 { name: extract_repo_name()?, commit_sha: "".to_string() })
 }

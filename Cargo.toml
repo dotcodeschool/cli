@@ -2,7 +2,6 @@
 name = "dotcodeschool-cli"
 version = "0.1.0"
 edition = "2021"
-author = "Trantorian"
 description = "A simple test runner for DotCodeShool courses"
 
 [profile.dev]
@@ -49,3 +48,10 @@ parity-scale-codec = { version = "3.6.12", features = ["derive"] }
 blake2 = "0.10.6"
 hex = "0.4.3"
 rand = "0.8.5"
+
+reqwest = { version = "0.12.7", features = ["json", "blocking"] }
+git2 = "0.19.0"
+strum = "0.26.3"
+strum_macros = "0.26.4"
+bson = "2.13.0"
+serde_yaml = "0.9.34"

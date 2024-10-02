@@ -1,24 +1,23 @@
 use clap::{Args, Parser, Subcommand};
+use constants::LOG;
 use db::PATH_DB;
 use monitor::{Monitor, MonitorError, StateMachine};
 
+mod constants;
 mod db;
 mod lister;
+mod models;
 mod monitor;
 mod parsing;
 mod runner;
 mod str_res;
 mod validator;
 
-const PATH_COURSE: &str = "./course.json";
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
-    #[arg(long)]
-    course: Option<String>,
     #[arg(long)]
     db: Option<String>,
 }
@@ -54,9 +53,9 @@ fn main() -> Result<(), MonitorError> {
 
     let file = std::fs::OpenOptions::new()
         .read(true)
-        .write(true)
         .create(true)
-        .open(str_res::LOG)?;
+        .append(true)
+        .open(LOG)?;
 
     let _ = simplelog::WriteLogger::init(
         simplelog::LevelFilter::Debug,
@@ -66,17 +65,12 @@ fn main() -> Result<(), MonitorError> {
         file,
     );
 
-    let path_course = match args.course {
-        Some(path) => path,
-        None => PATH_COURSE.to_string(),
-    };
-
     let path_db = match args.db {
         Some(path) => path,
         None => PATH_DB.to_string(),
     };
 
-    let monitor = Monitor::new(&path_db, &path_course)?;
+    let monitor = Monitor::new(&path_db)?;
 
     match args.command {
         Command::Test(TestArgs { name, options }) => {

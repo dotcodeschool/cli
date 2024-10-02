@@ -375,9 +375,7 @@ impl StateMachine for RunnerV1 {
                 on_fail(index_test);
                 on_finish();
 
-                if let Err(_) =
-                    json_report_are_tests_passing(false, &mut client)
-                {
+                if json_report_are_tests_passing(false, &mut client).is_err() {
                     progress.println(
                         "🚫 Failed to send test results to DotCodeSchool"
                             .red()
@@ -386,7 +384,7 @@ impl StateMachine for RunnerV1 {
                     );
                 }
 
-                if let Err(_) = json_report_close(&mut client) {
+                if json_report_close(&mut client).is_err() {
                     progress.println(
                         "🚫 Failed to close Websocket connection to DotCodeSchool".red().bold().to_string()
                     );
@@ -425,8 +423,7 @@ impl StateMachine for RunnerV1 {
                 on_pass();
                 on_finish();
 
-                if let Err(_) = json_report_are_tests_passing(true, &mut client)
-                {
+                if json_report_are_tests_passing(true, &mut client).is_err() {
                     progress.println(
                         "🚫 Failed to send test results to DotCodeSchool"
                             .red()
@@ -435,7 +432,7 @@ impl StateMachine for RunnerV1 {
                     );
                 }
 
-                if let Err(_) = json_report_close(&mut client) {
+                if json_report_close(&mut client).is_err() {
                     progress.println(
                         "🚫 Failed to close Websocket connection to DotCodeSchool".red().bold().to_string()
                     );
