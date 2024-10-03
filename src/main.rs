@@ -24,8 +24,14 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Run tests (uses staggered mode by default)
     #[command(name = "test")]
     Test(TestArgs),
+    /// Submit the current commit to DotCodeSchool, use --empty to create an
+    /// empty commit and submit it
+    #[command(name = "submit")]
+    Submit(SubmitArgs),
+    #[cfg(not(debug_assertions))]
     #[command(name = "check")]
     Check,
 }
@@ -42,10 +48,19 @@ struct TestArgs {
 #[derive(Args, Debug)]
 #[group(required = false, multiple = false)]
 struct TestOptions {
+    /// List all available tests for the course
     #[arg(long, group = "exclusive")]
     list: bool,
+    /// Run all tests at once
     #[arg(long, group = "exclusive")]
     all: bool,
+}
+
+#[derive(Args, Debug)]
+struct SubmitArgs {
+    /// Create an empty commit and submit it
+    #[arg(long)]
+    empty: bool,
 }
 
 fn main() -> Result<(), MonitorError> {
@@ -94,6 +109,9 @@ fn main() -> Result<(), MonitorError> {
                 }
             }
         }
+        Command::Submit(SubmitArgs { empty }) => {
+            handle_submit(empty)?;
+        }
         Command::Check => {
             let mut validator = monitor.into_validator();
 
@@ -102,6 +120,43 @@ fn main() -> Result<(), MonitorError> {
             }
         }
     }
+
+    Ok(())
+}
+
+fn handle_submit(empty: bool) -> Result<(), MonitorError> {
+    if empty {
+        // Create an empty commit
+        let commit_output = std::process::Command::new("git")
+            .args(&[
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Empty commit for submission",
+            ])
+            .output()?;
+
+        if !commit_output.status.success() {
+            return Err(MonitorError::IOError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to create an empty commit",
+            )));
+        }
+
+        log::debug!("Successfully created empty commit.");
+    }
+    // Push the commit to the remote repository
+    let push_output =
+        std::process::Command::new("git").args(&["push"]).output()?;
+
+    if !push_output.status.success() {
+        return Err(MonitorError::IOError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Failed to push the commit to the remote repository",
+        )));
+    }
+
+    log::debug!("Successfully pushed the commit to the remote repository.");
 
     Ok(())
 }
