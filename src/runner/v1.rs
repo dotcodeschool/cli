@@ -519,10 +519,10 @@ fn json_report_test(
             "  \"event_type\":",
             "  \"log\",\n",
             "  \"bytes\":",
-            "  \"{}\"\n",
+            "  \"{:?}\"\n",
             "}}"
         ),
-        json
+        json.as_bytes()
     );
 
     #[cfg(not(debug_assertions))]
@@ -532,10 +532,10 @@ fn json_report_test(
             "\"event_type\":",
             "\"log\",",
             "\"bytes\":",
-            "\"{}\"",
+            "\"{:?}\"",
             "}}"
         ),
-        json
+        json.as_bytes()
     );
 
     log::debug!("Sending message to redis: {message}");
@@ -549,6 +549,7 @@ fn json_report_test(
     Ok(())
 }
 
+// TODO: Update test results on the database
 fn json_report_are_tests_passing(
     status: bool,
     client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
@@ -558,10 +559,8 @@ fn json_report_are_tests_passing(
         concat!(
             "{{\n",
             "  \"event_type\":\n",
-            "  \"log\",\n",
-            "  \"bytes\": {{\n",
-            "    \"success\": {}\n",
-            "  }}\n",
+            "  \"status\",\n",
+            "  \"success\": {}\n",
             "}}"
         ),
         status
@@ -572,21 +571,20 @@ fn json_report_are_tests_passing(
         concat!(
             "{{",
             "\"event_type\":",
-            "\"log\",",
-            "\"bytes\":",
+            "\"status\",",
             "\"success\": {}",
             "}}"
         ),
         status
     );
 
-    log::debug!("Sending message to redis: {message}");
+    // log::debug!("Sending message to redis: {message}");
 
-    client
-        .send(Message::Text(message))
-        .map_err(|err| RedisReportError::WsError(err.to_string()))?;
+    // client
+    //     .send(Message::Text(message))
+    //     .map_err(|err| RedisReportError::WsError(err.to_string()))?;
 
-    log::debug!("Message sent successfully");
+    // log::debug!("Message sent successfully");
 
     Ok(())
 }
@@ -598,12 +596,12 @@ fn json_report_close(
 
     #[cfg(debug_assertions)]
     let message =
-        concat!("{{\n", "  \"event_type\":", "  \"disconnect\"\n", "}}")
+        concat!("{\n", "  \"event_type\":", "  \"disconnect\"\n", "}")
             .to_string();
 
     #[cfg(not(debug_assertions))]
     let message =
-        concat!("{{", "\"event_type\":", "\"disconnect\"", "}}").to_string();
+        concat!("{", "\"event_type\":", "\"disconnect\"", "}").to_string();
 
     log::debug!("Sending message to redis: {message}");
 

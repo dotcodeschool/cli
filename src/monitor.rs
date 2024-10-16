@@ -201,8 +201,8 @@ impl Monitor {
 
         match course {
             JsonCourseVersion::V1(_) => {
-                let test_count = tester.stages.iter().fold(0, |acc, stage| {
-                    acc + stage.lessons.iter().fold(0, |acc, lesson| {
+                let test_count = tester.sections.iter().fold(0, |acc, section| {
+                    acc + section.lessons.iter().fold(0, |acc, lesson| {
                         acc + match &lesson.suites {
                             Some(suites) => suites
                                 .iter()
@@ -243,6 +243,7 @@ impl Monitor {
         }
     }
 
+    #[cfg(not(debug_assertions))]
     pub fn into_validator(self) -> ValidatorVersion {
         self.greet();
 
@@ -251,9 +252,9 @@ impl Monitor {
         match course {
             JsonCourseVersion::V1(course) => {
                 let slug_count =
-                    1 + tester.stages.iter().fold(0, |acc, stage| {
+                    1 + tester.sections.iter().fold(0, |acc, section| {
                         acc + 1
-                            + stage.lessons.iter().fold(0, |acc, lesson| {
+                            + section.lessons.iter().fold(0, |acc, lesson| {
                                 acc + 1
                                     + match &lesson.suites {
                                         Some(suites) => suites.iter().fold(
@@ -411,12 +412,12 @@ impl Monitor {
         let (mut client, _) = tungstenite::client::connect(ws_url)?;
         client.send(Message::Text(
             concat!(
-                "{{",
+                "{",
                 "\"event_type\":",
                 "\"init\",",
                 "\"stream_id\":",
                 "\"test\"",
-                "}}"
+                "}"
             )
             .to_string(),
         ))?;

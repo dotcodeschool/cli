@@ -10,20 +10,20 @@ use crate::{
 pub enum ValidatorStateV1 {
     Loaded,
     Course,
-    Stage {
-        index_stage: usize,
+    Section {
+        index_section: usize,
     },
     Lesson {
-        index_stage: usize,
+        index_section: usize,
         index_lesson: usize,
     },
     Suite {
-        index_stage: usize,
+        index_section: usize,
         index_lesson: usize,
         index_suite: usize,
     },
     Test {
-        index_stage: usize,
+        index_section: usize,
         index_lesson: usize,
         index_suite: usize,
         index_test: usize,
@@ -80,18 +80,18 @@ impl StateMachine for ValidatorV1 {
 
                 Self {
                     progress,
-                    state: ValidatorStateV1::Stage { index_stage: 0 },
+                    state: ValidatorStateV1::Section { index_section: 0 },
                     course,
                     tester,
                 }
             }
-            ValidatorStateV1::Stage { index_stage } => {
-                let stage = &tester.stages[index_stage];
+            ValidatorStateV1::Section { index_section } => {
+                let section = &tester.sections[index_section];
 
                 progress.println(format!(
                     "╰─{}: {} ✅",
-                    stage.name.green().bold(),
-                    stage.slug.white()
+                    section.name.green().bold(),
+                    section.slug.white()
                 ));
 
                 progress.inc(1);
@@ -99,20 +99,20 @@ impl StateMachine for ValidatorV1 {
                 Self {
                     progress,
                     state: ValidatorStateV1::Lesson {
-                        index_stage,
+                        index_section,
                         index_lesson: 0,
                     },
                     course,
                     tester,
                 }
             }
-            ValidatorStateV1::Lesson { index_stage, index_lesson } => {
-                let stage = &tester.stages[index_stage];
-                let lesson = &stage.lessons[index_lesson];
+            ValidatorStateV1::Lesson { index_section, index_lesson } => {
+                let section = &tester.sections[index_section];
+                let lesson = &section.lessons[index_lesson];
 
                 let slug_expected = format!(
                     "0x{}",
-                    hash(&[&course.name, &stage.name, &lesson.name,])
+                    hash(&[&course.name, &section.name, &lesson.name,])
                 );
                 if slug_expected != lesson.slug {
                     progress.println(format!(
@@ -145,7 +145,7 @@ impl StateMachine for ValidatorV1 {
                         Self {
                             progress,
                             state: ValidatorStateV1::Suite {
-                                index_stage,
+                                index_section,
                                 index_lesson,
                                 index_suite: 0,
                             },
@@ -154,13 +154,13 @@ impl StateMachine for ValidatorV1 {
                         }
                     } else {
                         match (
-                            index_stage + 1 < tester.stages.len(),
-                            index_lesson + 1 < stage.lessons.len(),
+                            index_section + 1 < tester.sections.len(),
+                            index_lesson + 1 < section.lessons.len(),
                         ) {
                             (_, true) => Self {
                                 progress,
                                 state: ValidatorStateV1::Lesson {
-                                    index_stage,
+                                    index_section,
                                     index_lesson: index_lesson + 1,
                                 },
                                 course,
@@ -168,8 +168,8 @@ impl StateMachine for ValidatorV1 {
                             },
                             (true, false) => Self {
                                 progress,
-                                state: ValidatorStateV1::Stage {
-                                    index_stage: index_stage + 1,
+                                state: ValidatorStateV1::Section {
+                                    index_section: index_section + 1,
                                 },
                                 course,
                                 tester,
@@ -185,12 +185,12 @@ impl StateMachine for ValidatorV1 {
                 }
             }
             ValidatorStateV1::Suite {
-                index_stage,
+                index_section,
                 index_lesson,
                 index_suite,
             } => {
-                let stage = &tester.stages[index_stage];
-                let lesson = &stage.lessons[index_lesson];
+                let section = &tester.sections[index_section];
+                let lesson = &section.lessons[index_lesson];
                 let suite = &lesson.suites.as_ref().expect(
                     "Suite has been checked to be Some in previous state",
                 )[index_suite];
@@ -199,7 +199,7 @@ impl StateMachine for ValidatorV1 {
                     "0x{}",
                     hash(&[
                         &course.name,
-                        &stage.name,
+                        &section.name,
                         &lesson.name,
                         &suite.name,
                     ])
@@ -234,7 +234,7 @@ impl StateMachine for ValidatorV1 {
                     Self {
                         progress,
                         state: ValidatorStateV1::Test {
-                            index_stage,
+                            index_section,
                             index_lesson,
                             index_suite,
                             index_test: 0,
@@ -245,13 +245,13 @@ impl StateMachine for ValidatorV1 {
                 }
             }
             ValidatorStateV1::Test {
-                index_stage,
+                index_section,
                 index_lesson,
                 index_suite,
                 index_test,
             } => {
-                let stage = &tester.stages[index_stage];
-                let lesson = &stage.lessons[index_lesson];
+                let section = &tester.sections[index_section];
+                let lesson = &section.lessons[index_lesson];
                 let suites = &lesson.suites.as_ref().expect(
                     "Suite has been checked to be Some in previous state",
                 );
@@ -262,7 +262,7 @@ impl StateMachine for ValidatorV1 {
                     "0x{}",
                     hash(&[
                         &course.name,
-                        &stage.name,
+                        &section.name,
                         &lesson.name,
                         &suite.name,
                         &test.name,
@@ -296,15 +296,15 @@ impl StateMachine for ValidatorV1 {
                     progress.inc(1);
 
                     match (
-                        index_stage + 1 < tester.stages.len(),
-                        index_lesson + 1 < stage.lessons.len(),
+                        index_section + 1 < tester.sections.len(),
+                        index_lesson + 1 < section.lessons.len(),
                         index_suite + 1 < suites.len(),
                         index_test + 1 < suite.tests.len(),
                     ) {
                         (_, _, _, true) => Self {
                             progress,
                             state: ValidatorStateV1::Test {
-                                index_stage,
+                                index_section,
                                 index_lesson,
                                 index_suite,
                                 index_test: index_test + 1,
@@ -315,7 +315,7 @@ impl StateMachine for ValidatorV1 {
                         (_, _, true, false) => Self {
                             progress,
                             state: ValidatorStateV1::Suite {
-                                index_stage,
+                                index_section,
                                 index_lesson,
                                 index_suite: index_suite + 1,
                             },
@@ -325,7 +325,7 @@ impl StateMachine for ValidatorV1 {
                         (_, true, false, false) => Self {
                             progress,
                             state: ValidatorStateV1::Lesson {
-                                index_stage,
+                                index_section,
                                 index_lesson: index_lesson + 1,
                             },
                             course,
@@ -333,8 +333,8 @@ impl StateMachine for ValidatorV1 {
                         },
                         (true, false, false, false) => Self {
                             progress,
-                            state: ValidatorStateV1::Stage {
-                                index_stage: index_stage + 1,
+                            state: ValidatorStateV1::Section {
+                                index_section: index_section + 1,
                             },
                             course,
                             tester,

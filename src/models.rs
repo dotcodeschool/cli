@@ -7,7 +7,7 @@ use strum_macros::Display;
 
 use crate::{
     db::{PathLink, TestState, ValidationState},
-    parsing::v1::{no_empty_vec, JsonAuthorV1, JsonStageV1},
+    parsing::v1::{no_empty_vec, JsonAuthorV1, JsonSectionV1},
 };
 
 /// The type of document. This is used to identify the type of document in the
@@ -83,25 +83,25 @@ pub struct Relationship {
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct TesterDefinition {
     #[serde(deserialize_with = "no_empty_vec")]
-    pub stages: Vec<JsonStageV1>,
+    pub sections: Vec<JsonSectionV1>,
     pub course_name: String,
 }
 
 impl TesterDefinition {
     // TODO: remove copy
     pub fn list_tests(&self) -> IndexMap<String, TestState> {
-        let Self { stages, course_name, .. } = self;
+        let Self { sections, course_name, .. } = self;
         log::debug!("Listing tests...");
 
-        stages.iter().fold(IndexMap::new(), |acc, stage| {
-            stage.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
+        sections.iter().fold(IndexMap::new(), |acc, section| {
+            section.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
                 Some(suites) => suites.iter().fold(acc, |acc, suite| {
                     suite.tests.iter().fold(acc, |mut acc, test| {
                         let key = [
                             test.name.to_lowercase(),
                             suite.name.to_lowercase(),
                             lesson.name.to_lowercase(),
-                            stage.name.to_lowercase(),
+                            section.name.to_lowercase(),
                             course_name.to_lowercase(),
                         ]
                         .concat();
@@ -113,7 +113,7 @@ impl TesterDefinition {
                             .collect::<Vec<_>>();
 
                         let path = vec![
-                            PathLink::Link(stage.name.clone()),
+                            PathLink::Link(section.name.clone()),
                             PathLink::Link(lesson.name.clone()),
                             if suite.optional {
                                 PathLink::LinkOptional(suite.name.clone())

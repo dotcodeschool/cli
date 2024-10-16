@@ -112,6 +112,7 @@ fn main() -> Result<(), MonitorError> {
         Command::Submit(SubmitArgs { empty }) => {
             handle_submit(empty)?;
         }
+        #[cfg(not(debug_assertions))]
         Command::Check => {
             let mut validator = monitor.into_validator();
 

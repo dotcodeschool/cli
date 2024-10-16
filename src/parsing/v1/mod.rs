@@ -26,37 +26,17 @@ pub struct JsonTestSuiteV1 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
-pub struct JsonPositionV1 {
-    pub x: u32,
-    pub y: u32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(tag = "type")]
-pub enum JsonContentV1 {
-    #[serde(rename = "markdown")]
-    Markdown { file: String, position: JsonPositionV1 },
-    #[default]
-    #[serde(skip)]
-    Invalid,
-}
-
-#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct JsonLessonV1 {
     pub name: String,
     pub slug: String,
-    pub description: String,
     pub duration: u32,
-    #[serde(deserialize_with = "no_empty_vec")]
-    pub content: Vec<JsonContentV1>,
     pub suites: Option<Vec<JsonTestSuiteV1>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
-pub struct JsonStageV1 {
+pub struct JsonSectionV1 {
     pub name: String,
     pub slug: String,
-    pub description: String,
     #[serde(deserialize_with = "no_empty_vec")]
     pub lessons: Vec<JsonLessonV1>,
 }

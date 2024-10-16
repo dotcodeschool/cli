@@ -93,24 +93,24 @@ impl TestState {
     }
 
     pub fn path_to(&self) -> String {
-        let [stage_link, lesson_link, suite_link, _] = &self.path[..] else {
+        let [section_link, lesson_link, suite_link, _] = &self.path[..] else {
             return String::default();
         };
 
-        match (stage_link, lesson_link, suite_link) {
+        match (section_link, lesson_link, suite_link) {
             (
-                PathLink::Link(stage_name),
+                PathLink::Link(section_name),
                 PathLink::Link(lesson_name),
                 PathLink::Link(suite_name),
             ) => {
-                format!("{stage_name}/{lesson_name}/{suite_name}")
+                format!("{section_name}/{lesson_name}/{suite_name}")
             }
             (
-                PathLink::Link(stage_name),
+                PathLink::Link(section_name),
                 PathLink::Link(lesson_name),
                 PathLink::LinkOptional(suite_name),
             ) => {
-                format!("{stage_name}/{lesson_name}/{suite_name}")
+                format!("{section_name}/{lesson_name}/{suite_name}")
             }
             _ => unreachable!(),
         }
@@ -119,14 +119,14 @@ impl TestState {
 
 impl Display for TestState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let [stage_link, lesson_link, suite_link, test_link] = &self.path[..]
+        let [section_link, lesson_link, suite_link, test_link] = &self.path[..]
         else {
             return write!(f, "");
         };
 
-        match (stage_link, lesson_link, suite_link, test_link) {
+        match (section_link, lesson_link, suite_link, test_link) {
             (
-                PathLink::Link(stage_name),
+                PathLink::Link(section_name),
                 PathLink::Link(lesson_name),
                 PathLink::Link(suite_name),
                 PathLink::Link(test_name),
@@ -134,13 +134,13 @@ impl Display for TestState {
                 write!(
                     f,
                     "\n{}\n╰─{}\n  ╰─{}\n\n   🧪 Running test {test_name}",
-                    stage_name.green(),
+                    section_name.green(),
                     lesson_name.green(),
                     suite_name.green()
                 )
             }
             (
-                PathLink::Link(stage_name),
+                PathLink::Link(section_name),
                 PathLink::Link(lesson_name),
                 PathLink::LinkOptional(suite_name),
                 PathLink::Link(test_name),
@@ -148,14 +148,14 @@ impl Display for TestState {
                 write!(
                     f,
                     "\n{}\n╰─{}\n  ╰─{} {}\n\n   🧪 Running test {test_name}",
-                    stage_name.green(),
+                    section_name.green(),
                     lesson_name.green(),
                     suite_name.green(),
                     *OPTIONAL
                 )
             }
             (
-                PathLink::Link(stage_name),
+                PathLink::Link(section_name),
                 PathLink::Link(lesson_name),
                 PathLink::Link(suite_name),
                 PathLink::LinkOptional(test_name),
@@ -163,7 +163,7 @@ impl Display for TestState {
                 write!(
                     f,
                     "\n{}\n╰─{}\n  ╰─{}\n\n   🧪 Running test {test_name} {}",
-                    stage_name.green(),
+                    section_name.green(),
                     lesson_name.green(),
                     suite_name.green(),
                     *OPTIONAL
