@@ -133,7 +133,7 @@ impl TesterDefinition {
                             message_on_fail: test.message_on_fail.clone(),
                             cmd,
                             path,
-                            passed: ValidationState::Unkown,
+                            passed: ValidationState::Unknown,
                             optional: test.optional,
                         };
 

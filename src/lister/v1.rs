@@ -73,7 +73,7 @@ impl StateMachine for ListerV1 {
                         let test_name = test.name.to_lowercase();
 
                         match test.passed {
-                            ValidationState::Unkown => {
+                            ValidationState::Unknown => {
                                 progress.println(format!(
                                     "• {} {}/{}",
                                     "[   ..   ]".white().dimmed(),

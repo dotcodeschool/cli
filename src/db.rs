@@ -43,7 +43,7 @@ pub enum DbError {
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum ValidationState {
-    Unkown,
+    Unknown,
     Pass,
     Fail,
 }
