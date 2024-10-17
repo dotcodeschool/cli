@@ -201,16 +201,17 @@ impl Monitor {
 
         match course {
             JsonCourseVersion::V1(_) => {
-                let test_count = tester.sections.iter().fold(0, |acc, section| {
-                    acc + section.lessons.iter().fold(0, |acc, lesson| {
-                        acc + match &lesson.suites {
-                            Some(suites) => suites
-                                .iter()
-                                .fold(0, |acc, suite| acc + suite.tests.len()),
-                            None => 0,
-                        }
-                    })
-                });
+                let test_count =
+                    tester.sections.iter().fold(0, |acc, section| {
+                        acc + section.lessons.iter().fold(0, |acc, lesson| {
+                            acc + match &lesson.tests {
+                                Some(tests) => {
+                                    tests.len()
+                                }
+                                None => 0,
+                            }
+                        })
+                    });
 
                 progress.set_length(test_count as u64);
 

@@ -30,7 +30,7 @@ pub struct JsonLessonV1 {
     pub name: String,
     pub slug: String,
     pub duration: u32,
-    pub suites: Option<Vec<JsonTestSuiteV1>>,
+    pub tests: Option<Vec<JsonTestV1>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]

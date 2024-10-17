@@ -94,12 +94,11 @@ impl TesterDefinition {
         log::debug!("Listing tests...");
 
         sections.iter().fold(IndexMap::new(), |acc, section| {
-            section.lessons.iter().fold(acc, |acc, lesson| match &lesson.suites {
-                Some(suites) => suites.iter().fold(acc, |acc, suite| {
-                    suite.tests.iter().fold(acc, |mut acc, test| {
+            section.lessons.iter().fold(acc, |acc, lesson| {
+                match &lesson.tests {
+                    Some(tests) => tests.iter().fold(acc, |mut acc, test| {
                         let key = [
                             test.name.to_lowercase(),
-                            suite.name.to_lowercase(),
                             lesson.name.to_lowercase(),
                             section.name.to_lowercase(),
                             course_name.to_lowercase(),
@@ -115,12 +114,12 @@ impl TesterDefinition {
                         let path = vec![
                             PathLink::Link(section.name.clone()),
                             PathLink::Link(lesson.name.clone()),
-                            if suite.optional {
-                                PathLink::LinkOptional(suite.name.clone())
+                            if test.optional {
+                                PathLink::LinkOptional(test.name.clone())
                             } else {
-                                PathLink::Link(suite.name.clone())
+                                PathLink::Link(test.name.clone())
                             },
-                            if !suite.optional && test.optional {
+                            if !test.optional && test.optional {
                                 PathLink::LinkOptional(test.name.clone())
                             } else {
                                 PathLink::Link(test.name.clone())
@@ -135,14 +134,14 @@ impl TesterDefinition {
                             cmd,
                             path,
                             passed: ValidationState::Unkown,
-                            optional: suite.optional || test.optional,
+                            optional: test.optional,
                         };
 
                         acc.insert(key, test);
                         acc
-                    })
-                }),
-                None => acc,
+                    }),
+                    None => acc,
+                }
             })
         })
     }
