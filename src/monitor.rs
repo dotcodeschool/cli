@@ -257,14 +257,10 @@ impl Monitor {
                         acc + 1
                             + section.lessons.iter().fold(0, |acc, lesson| {
                                 acc + 1
-                                    + match &lesson.suites {
-                                        Some(suites) => suites.iter().fold(
-                                            0,
-                                            |acc, suite| {
-                                                acc + 1 + suite.tests.len()
-                                            },
-                                        ),
-                                        None => 0,
+                                    + if let Some(tests) = &lesson.tests {
+                                        tests.len()
+                                    } else {
+                                        0
                                     }
                             })
                     });
