@@ -147,7 +147,7 @@ impl Monitor {
                         let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
-                        // let _ = Self::tester_repo_destroy(&repo_name_1);
+                        let _ = Self::tester_repo_destroy(&repo_name_1);
                     })
                     .build();
 
