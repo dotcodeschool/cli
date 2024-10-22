@@ -85,10 +85,16 @@ impl TestState {
         log::debug!("Test executed successfully!");
 
         match output.status.success() {
-            true => TestResult::Pass(String::from_utf8(output.stdout).unwrap()),
-            false => {
-                TestResult::Fail(String::from_utf8(output.stderr).unwrap())
-            }
+            true => TestResult::Pass(format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )),
+            false => TestResult::Fail(format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )),
         }
     }
 
