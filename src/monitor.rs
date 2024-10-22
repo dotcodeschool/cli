@@ -1,8 +1,11 @@
+use std::fs;
 use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 
 use indicatif::ProgressBar;
 
 use colored::Colorize;
+use ignore::Walk;
 use itertools::{FoldWhile, Itertools};
 use parity_scale_codec::{Decode, Encode};
 use rand::Rng;
@@ -144,7 +147,7 @@ impl Monitor {
                         let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
-                        let _ = Self::tester_repo_destroy(&repo_name_1);
+                        // let _ = Self::tester_repo_destroy(&repo_name_1);
                     })
                     .build();
 
@@ -205,9 +208,7 @@ impl Monitor {
                     tester.sections.iter().fold(0, |acc, section| {
                         acc + section.lessons.iter().fold(0, |acc, lesson| {
                             acc + match &lesson.tests {
-                                Some(tests) => {
-                                    tests.len()
-                                }
+                                Some(tests) => tests.len(),
                                 None => 0,
                             }
                         })
@@ -401,6 +402,46 @@ impl Monitor {
         tests.into_inner()
     }
 
+    fn copy_user_code_to_tester(
+        source: &str,
+        destination: &str,
+    ) -> Result<(), std::io::Error> {
+        let source_path = Path::new(source);
+        let destination_path = Path::new(destination);
+
+        // Get the name of the destination directory
+        let dest_dir_name =
+            destination_path.file_name().unwrap().to_str().unwrap();
+
+        for entry in Walk::new(source_path) {
+            let entry = entry.map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+            let path = entry.path();
+
+            // Skip the root directory itself and the destination directory
+            if path == source_path
+                || path.file_name().map_or(false, |name| name == dest_dir_name)
+            {
+                continue;
+            }
+
+            let relative_path = path.strip_prefix(source_path).unwrap();
+            let dest_path = destination_path.join(relative_path);
+
+            if path.is_dir() {
+                fs::create_dir_all(&dest_path)?;
+            } else {
+                if let Some(parent) = dest_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(path, &dest_path)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn ws_stream_init(
         ws_url: &str,
     ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
@@ -424,7 +465,7 @@ impl Monitor {
 
     fn tester_repo_init(repo_url: &str) -> Result<String, MonitorError> {
         let mut rng = rand::thread_rng();
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0u8; 8];
 
         rng.fill(&mut bytes);
         let repo_name = hex::encode(bytes);
@@ -434,6 +475,13 @@ impl Monitor {
             .arg(repo_url)
             .arg(&repo_name)
             .output()?;
+
+        // Copy user's code to the tester directory
+        let current_dir = std::env::current_dir()?;
+        Self::copy_user_code_to_tester(
+            current_dir.to_str().unwrap(),
+            &repo_name,
+        )?;
 
         Ok(repo_name)
     }
