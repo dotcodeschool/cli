@@ -10,21 +10,10 @@ use crate::{
 pub enum ValidatorStateV1 {
     Loaded,
     Course,
-    Section {
-        index_section: usize,
-    },
-    Lesson {
-        index_section: usize,
-        index_lesson: usize,
-    },
-    Test {
-        index_section: usize,
-        index_lesson: usize,
-        index_test: usize,
-    },
-    Fail {
-        reason: String,
-    },
+    Section { index_section: usize },
+    Lesson { index_section: usize, index_lesson: usize },
+    Test { index_section: usize, index_lesson: usize, index_test: usize },
+    Fail { reason: String },
     Pass,
     Finish,
 }
