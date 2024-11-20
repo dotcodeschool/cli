@@ -82,6 +82,7 @@ impl Monitor {
     pub fn into_runner(
         self,
         test_name: Option<String>,
+        keep: bool,
     ) -> Result<RunnerVersion, MonitorError> {
         self.greet();
 
@@ -121,7 +122,7 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::ws_stream_init(&metadata.ws_url)?;
+        let client = Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -147,7 +148,14 @@ impl Monitor {
                         let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
-                        let _ = Self::tester_repo_destroy(&repo_name_1);
+                        if keep {
+                            log::debug!(
+                                "keeping tester repo '{}'",
+                                &repo_name_1
+                            );
+                        } else {
+                            let _ = Self::tester_repo_destroy(&repo_name_1);
+                        }
                     })
                     .build();
 
@@ -156,7 +164,10 @@ impl Monitor {
         }
     }
 
-    pub fn into_runner_staggered(self) -> Result<RunnerVersion, MonitorError> {
+    pub fn into_runner_staggered(
+        self,
+        keep: bool,
+    ) -> Result<RunnerVersion, MonitorError> {
         self.greet();
 
         let Self { course, progress, tree, tester, .. } = self;
@@ -200,7 +211,7 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::ws_stream_init(&metadata.ws_url)?;
+        let client = Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -236,7 +247,11 @@ impl Monitor {
                         let _ = tree1.insert(KEY_STAGGERED, staggered.encode());
                     })
                     .on_finish(move || {
-                        let _ = Self::tester_repo_destroy(&repo_name_1);
+                        if keep {
+                            log::debug!("keeping tester repo '{repo_name_1}'");
+                        } else {
+                            let _ = Self::tester_repo_destroy(&repo_name_1);
+                        }
                     })
                     .build();
 
@@ -444,21 +459,15 @@ impl Monitor {
 
     fn ws_stream_init(
         ws_url: &str,
+        logstream_id: &str,
     ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, MonitorError> {
         // TODO: use https://docs.rs/zeroize/latest/zeroize/ to handle ws address
         // + should be received from initial curl response
         let (mut client, _) = tungstenite::client::connect(ws_url)?;
-        client.send(Message::Text(
-            concat!(
-                "{",
-                "\"event_type\":",
-                "\"init\",",
-                "\"stream_id\":",
-                "\"test\"",
-                "}"
-            )
-            .to_string(),
-        ))?;
+        client.send(Message::Text(format!(
+            "{{\"event_type\":\"init\",\"stream_id\":\"{}\"}}",
+            logstream_id
+        )))?;
 
         Ok(client)
     }

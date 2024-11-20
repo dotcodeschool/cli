@@ -52,8 +52,11 @@ struct TestOptions {
     #[arg(long, group = "exclusive")]
     list: bool,
     /// Run all tests at once
-    #[arg(long, group = "exclusive")]
+    #[arg(long)]
     all: bool,
+    /// Do not destroy the test environment after running the tests
+    #[arg(long)]
+    keep: bool,
 }
 
 #[derive(Args, Debug)]
@@ -96,13 +99,16 @@ fn main() -> Result<(), MonitorError> {
                     lister = lister.run();
                 }
             } else if options.all || name.is_some() {
-                let mut runner = monitor.into_runner(name)?;
+                let mut runner = monitor.into_runner(name, options.keep)?;
 
                 while !runner.is_finished() {
                     runner = runner.run();
                 }
             } else {
-                let mut runner = monitor.into_runner_staggered()?;
+                let mut runner = monitor.into_runner(name, options.keep)?;
+                // TODO: replace with into_runner_staggered
+                // let mut runner =
+                // monitor.into_runner_staggered(options.keep)?;
 
                 while !runner.is_finished() {
                     runner = runner.run();

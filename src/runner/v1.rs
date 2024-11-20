@@ -549,7 +549,6 @@ fn json_report_test(
     Ok(())
 }
 
-// TODO: Update test results on the database
 fn json_report_are_tests_passing(
     status: bool,
     client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
@@ -578,13 +577,13 @@ fn json_report_are_tests_passing(
         status
     );
 
-    // log::debug!("Sending message to redis: {message}");
+    log::debug!("Sending message to redis: {message}");
 
-    // client
-    //     .send(Message::Text(message))
-    //     .map_err(|err| RedisReportError::WsError(err.to_string()))?;
+    client
+        .send(Message::Text(message))
+        .map_err(|err| RedisReportError::WsError(err.to_string()))?;
 
-    // log::debug!("Message sent successfully");
+    log::debug!("Message sent successfully");
 
     Ok(())
 }
