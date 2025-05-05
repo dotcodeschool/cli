@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct RedisTestResultV1 {
     slug: String,
     output: String,
-    state: RedisTestState,
+    pub state: RedisTestState,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

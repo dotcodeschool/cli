@@ -2,13 +2,18 @@ use std::net::TcpStream;
 
 use indicatif::ProgressBar;
 use parity_scale_codec::{Decode, Encode};
+use reqwest::{blocking::Client, StatusCode};
 use thiserror::Error;
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
-    db::{TestState, ValidationState},
+    db::{PathLink, TestState, ValidationState},
+    models::TestLogEntry,
     monitor::StateMachine,
-    parsing::{v1::redis::RedisTestResultV1, TestResult},
+    parsing::{
+        v1::redis::{RedisTestResultV1, RedisTestState},
+        TestResult,
+    },
 };
 
 use super::{format_bar, format_output};
@@ -114,7 +119,7 @@ impl StateMachine for RunnerV1 {
         let Self {
             progress,
             tree,
-            target,
+            ref target,
             mut client,
             tests,
             success,
@@ -139,7 +144,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        target,
+                        target: target.to_string(),
                         client,
                         tests,
                         success,
@@ -155,7 +160,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        target,
+                        target: target.to_string(),
                         client,
                         tests,
                         success,
@@ -192,7 +197,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
-                                target,
+                                target: target.to_string(),
                                 client,
                                 tests,
                                 success,
@@ -216,13 +221,16 @@ impl StateMachine for RunnerV1 {
                             &output,
                         );
 
-                        if let Err(e) =
-                            json_report_test(test_result, &mut client)
-                        {
+                        if let Err(e) = json_report_test(
+                            test_result,
+                            &mut client,
+                            &tests[index_test].1,
+                            &self.target,
+                        ) {
                             return Self {
                                 progress,
                                 tree,
-                                target,
+                                target: target.to_string(),
                                 client,
                                 tests,
                                 success,
@@ -256,7 +264,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
-                                target,
+                                target: target.to_string(),
                                 client,
                                 tests,
                                 success,
@@ -284,13 +292,16 @@ impl StateMachine for RunnerV1 {
                             tests[index_test].1.optional,
                         );
 
-                        if let Err(e) =
-                            json_report_test(test_result, &mut client)
-                        {
+                        if let Err(e) = json_report_test(
+                            test_result,
+                            &mut client,
+                            &tests[index_test].1,
+                            &self.target,
+                        ) {
                             return Self {
                                 progress,
                                 tree,
-                                target,
+                                target: target.to_string(),
                                 client,
                                 tests,
                                 success,
@@ -318,7 +329,7 @@ impl StateMachine for RunnerV1 {
                             return Self {
                                 progress,
                                 tree,
-                                target,
+                                target: target.to_string(),
                                 client,
                                 tests,
                                 success,
@@ -338,7 +349,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        target,
+                        target: target.to_string(),
                         client,
                         tests,
                         success: success + success_inc,
@@ -353,7 +364,7 @@ impl StateMachine for RunnerV1 {
                     Self {
                         progress,
                         tree,
-                        target,
+                        target: target.to_string(),
                         client,
                         tests,
                         success: success + success_inc,
@@ -393,7 +404,7 @@ impl StateMachine for RunnerV1 {
                 Self {
                     progress,
                     tree,
-                    target,
+                    target: target.to_string(),
                     client,
                     tests,
                     success,
@@ -441,7 +452,7 @@ impl StateMachine for RunnerV1 {
                 Self {
                     progress,
                     tree,
-                    target,
+                    target: target.to_string(),
                     client,
                     tests,
                     success,
@@ -455,7 +466,7 @@ impl StateMachine for RunnerV1 {
             RunnerStateV1::Finish => Self {
                 progress,
                 tree,
-                target,
+                target: target.to_string(),
                 client,
                 tests,
                 success,
@@ -501,6 +512,8 @@ enum RedisReportError {
 fn json_report_test(
     result: RedisTestResultV1,
     client: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    test: &TestState,
+    repo_name: &String,
 ) -> Result<(), RedisReportError> {
     #[cfg(debug_assertions)]
     let json = serde_json::to_string_pretty(&result)
@@ -545,6 +558,49 @@ fn json_report_test(
         .map_err(|err| RedisReportError::WsError(err.to_string()))?;
 
     log::debug!("Message sent successfully");
+
+    // Get path info from test state
+    let [section_link, lesson_link, _, _] = &test.path[..] else {
+        return Ok(());
+    };
+
+    // Extract section and lesson names
+    let section_name = match section_link {
+        PathLink::Link(name) | PathLink::LinkOptional(name) => name.clone(),
+    };
+
+    let lesson_name = match lesson_link {
+        PathLink::Link(name) | PathLink::LinkOptional(name) => name.clone(),
+    };
+
+    let test_log = TestLogEntry {
+        test_slug: test.slug.clone(),
+        passed: matches!(result.state, RedisTestState::Passed),
+        timestamp: chrono::Utc::now(),
+        section_name,
+        lesson_name,
+        test_name: test.name.clone(),
+        repo_name: repo_name.clone(),
+    };
+
+    // TODO: Send log entry to MongoDB using the backend endpoint
+    // BACKEND_URL/test-log
+    let url = format!("{}/test-log", crate::constants::BACKEND_URL);
+    match Client::new().post(&url).json(&test_log).send() {
+        Ok(response) => {
+            if response.status() == StatusCode::OK {
+                log::info!("Test log entry sent successfully");
+            } else {
+                log::error!(
+                    "Failed to send test log entry: {}",
+                    response.status()
+                );
+            }
+        }
+        Err(err) => {
+            log::error!("Failed to send test log entry: {}", err);
+        }
+    }
 
     Ok(())
 }

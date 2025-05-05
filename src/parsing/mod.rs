@@ -88,7 +88,7 @@ impl<'a> JsonCourse<'a> for JsonCourseVersion {
     }
 }
 
-fn extract_repo_name() -> Result<String, ParsingError> {
+pub fn extract_repo_name() -> Result<String, ParsingError> {
     log::debug!("Extracting repo name from .git/config");
     let repo = Repository::open(".")?;
     let remote = repo.find_remote("origin")?;

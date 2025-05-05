@@ -122,7 +122,8 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
+        let client =
+            Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -211,7 +212,8 @@ impl Monitor {
 
         log::debug!("initiating redis websocket stream");
 
-        let client = Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
+        let client =
+            Self::ws_stream_init(&metadata.ws_url, &metadata.logstream_id)?;
 
         match course {
             JsonCourseVersion::V1(_) => {
@@ -473,11 +475,8 @@ impl Monitor {
     }
 
     fn tester_repo_init(repo_url: &str) -> Result<String, MonitorError> {
-        let mut rng = rand::thread_rng();
-        let mut bytes = [0u8; 8];
-
-        rng.fill(&mut bytes);
-        let repo_name = hex::encode(bytes);
+        // Extract the repo name from the git config
+        let repo_name = crate::parsing::extract_repo_name()?;
 
         std::process::Command::new("git")
             .arg("clone")
