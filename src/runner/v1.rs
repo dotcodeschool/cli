@@ -573,12 +573,20 @@ fn json_report_test(
         PathLink::Link(name) | PathLink::LinkOptional(name) => name.clone(),
     };
 
+    // Extract lesson slug from the path
+    // We need to get the lesson slug from the test state
+    // The lesson slug is stored in the test state's path
+    let lesson_slug = match lesson_link {
+        PathLink::Link(name) | PathLink::LinkOptional(name) => name.to_lowercase().replace(" ", "-"),
+    };
+
     let test_log = TestLogEntry {
         test_slug: test.slug.clone(),
         passed: matches!(result.state, RedisTestState::Passed),
         timestamp: chrono::Utc::now(),
         section_name,
         lesson_name,
+        lesson_slug,
         test_name: test.name.clone(),
         repo_name: repo_name.clone(),
     };
