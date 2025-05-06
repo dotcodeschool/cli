@@ -64,6 +64,7 @@ pub struct TestState {
     pub path: Vec<PathLink>,
     pub passed: ValidationState,
     pub optional: bool,
+    pub lesson_slug: String,
 }
 
 impl TestState {

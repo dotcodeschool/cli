@@ -149,6 +149,7 @@ impl TesterDefinition {
                             path,
                             passed: ValidationState::Unknown,
                             optional: test.optional,
+                            lesson_slug: lesson.slug.clone(),
                         };
 
                         acc.insert(key, test);
