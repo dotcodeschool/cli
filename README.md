@@ -1,3 +1,12 @@
+> [!CAUTION]
+> **This repository has been archived and is no longer maintained.**
+> 
+> This CLI tool was part of an older architecture where students submitted tests via a backend service. Dot Code School now uses a fully static pipeline — courses are ingested from gitorial repos at build time and deployed via Vercel. There is no backend or test submission system to connect to.
+> 
+> See [dotcodeschool/frontend](https://github.com/dotcodeschool/frontend) for the current platform.
+
+---
+
 # DotCodeSchool CLI
 
 A command-line interface tool for running tests and submitting assignments for DotCodeSchool courses.
